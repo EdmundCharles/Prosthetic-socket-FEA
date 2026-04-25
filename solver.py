@@ -4,6 +4,7 @@ import numpy as np
 import scipy.sparse as sp
 from scipy.sparse.linalg import spsolve
 
+
 def generate_volumetric_mesh(file_path: str, mesh_size: float = 8.0):
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
@@ -48,16 +49,16 @@ def apply_boundary_conditions(nodes):
     return bottom_nodes, top_nodes
 
 def solve_fem_system(nodes, elements, bottom_nodes, top_nodes, load_newtons, offset_x, offset_y):
-    """
-    Математическое ядро МКЭ. 
-    Теперь принимает offset_x и offset_y для реализации ГОСТ 10328.
-    """
-    # Физика материала (FGF пластик, примерные значения)
+    # Физика материала (FGF пластик)
     E = 2100.0   # МПа
     nu = 0.35    # Коэффициент Пуассона
 
     num_nodes = len(nodes)
-    num_dofs = 3 * num_nodes
+    num_physical_dofs = 3 * num_nodes
+    
+    # +1 Мастер-узел (6 степеней свободы: 3 перемещения, 3 поворота)
+    master_dof_start = num_physical_dofs
+    total_dofs = num_physical_dofs + 6
     
     # Матрица упругости D
     coeff = E / ((1 + nu) * (1 - 2 * nu))
@@ -72,6 +73,7 @@ def solve_fem_system(nodes, elements, bottom_nodes, top_nodes, load_newtons, off
 
     row_indices, col_indices, data_values = [], [], []
 
+    # 1. Сборка матрицы упругости тетраэдров (как было)
     for elem in elements:
         coords = nodes[elem]
         M = np.ones((4, 4))
@@ -92,34 +94,73 @@ def solve_fem_system(nodes, elements, bottom_nodes, top_nodes, load_newtons, off
         Ke = B.T @ D @ B * volume
         elem_dofs = np.repeat(elem * 3, 3) + np.tile([0, 1, 2], 4)
         grid_row, grid_col = np.meshgrid(elem_dofs, elem_dofs, indexing='ij')
-        row_indices.extend(grid_row.flatten()); col_indices.extend(grid_col.flatten()); data_values.extend(Ke.flatten())
+        row_indices.extend(grid_row.flatten())
+        col_indices.extend(grid_col.flatten())
+        data_values.extend(Ke.flatten())
 
-    K = sp.coo_matrix((data_values, (row_indices, col_indices)), shape=(num_dofs, num_dofs)).tocsr()
-    
-    # РАСЧЕТ НАГРУЗКИ ПО ГОСТ (Внецентренное сжатие)
-    F = np.zeros(num_dofs)
+    # =========================================================
+    # 2. RBE2 ЭЛЕМЕНТ: ЖЕСТКАЯ КИНЕМАТИЧЕСКАЯ СВЯЗЬ (ГОСТ 10328)
+    # =========================================================
     top_coords = nodes[top_nodes]
-    cx, cy = np.mean(top_coords[:, 0]), np.mean(top_coords[:, 1])
+    cx = np.mean(top_coords[:, 0])
+    cy = np.mean(top_coords[:, 1])
+    cz = np.max(nodes[:, 2]) + 50.0  # Виртуальный адаптер вынесен на 50 мм вверх
     
-    dx, dy = top_coords[:, 0] - cx, top_coords[:, 1] - cy
-    I_x, I_y = np.sum(dy**2), np.sum(dx**2)
-    M_y, M_x = load_newtons * offset_x, load_newtons * offset_y
+    # Координаты Мастер-узла (точка приложения силы пресса)
+    xm = cx + offset_x
+    ym = cy + offset_y
+    zm = cz
     
-    for i, node_idx in enumerate(top_nodes):
-        dof_z = node_idx * 3 + 2
-        f_axial = -load_newtons / len(top_nodes)
-        f_bend_x = (M_x * dy[i]) / I_x if I_x > 0 else 0
-        f_bend_y = -(M_y * dx[i]) / I_y if I_y > 0 else 0
-        F[dof_z] = f_axial + f_bend_x + f_bend_y
+    PENALTY_RBE = 1e10 * E  # Штрафная жесткость (имитация абсолютно жесткого металла)
 
-    # Граничные условия (Заделка дна)
-    PENALTY = 1e16
-    fixed_dofs = []
-    for node in bottom_nodes: fixed_dofs.extend([node*3, node*3+1, node*3+2])
-    K[fixed_dofs, fixed_dofs] += PENALTY
+    for node_idx in top_nodes:
+        x, y, z = nodes[node_idx]
+        dx, dy, dz = x - xm, y - ym, z - zm
+        
+        # Матрица связей C (3 уравнения на 9 степеней свободы: 3 для Slave, 6 для Master)
+        # Порядок DOF: [u_sx, u_sy, u_sz,  u_mx, u_my, u_mz,  th_mx, th_my, th_mz]
+        C = np.array([
+            [ 1,  0,  0,  -1,  0,  0,    0,  -dz,   dy],
+            [ 0,  1,  0,   0, -1,  0,   dz,    0,  -dx],
+            [ 0,  0,  1,   0,  0, -1,  -dy,   dx,    0]
+        ])
+        
+        # Штрафная матрица жесткости для конкретной связи
+        K_pen = PENALTY_RBE * (C.T @ C)
+        
+        # Индексы DOF для сборки в глобальную матрицу
+        global_dofs = [
+            node_idx*3, node_idx*3+1, node_idx*3+2,                  # Slave DOFs
+            master_dof_start, master_dof_start+1, master_dof_start+2,# Master Translations
+            master_dof_start+3, master_dof_start+4, master_dof_start+5 # Master Rotations
+        ]
+        
+        for r in range(9):
+            for c in range(9):
+                row_indices.append(global_dofs[r])
+                col_indices.append(global_dofs[c])
+                data_values.append(K_pen[r, c])
+
+    # 3. Сборка глобальной расширенной матрицы
+    K = sp.coo_matrix((data_values, (row_indices, col_indices)), shape=(total_dofs, total_dofs)).tocsr()
     
+    # 4. Вектор нагрузок (Сила прикладывается ТОЛЬКО к Мастер-узлу)
+    F = np.zeros(total_dofs)
+    # Сила направлена вниз по оси Z
+    F[master_dof_start + 2] = -load_newtons 
+
+    # 5. Граничные условия (Заделка дна)
+    PENALTY_BC = 1e16
+    fixed_dofs = []
+    for node in bottom_nodes: 
+        fixed_dofs.extend([node*3, node*3+1, node*3+2])
+    K[fixed_dofs, fixed_dofs] += PENALTY_BC
+    
+    # 6. Решение СЛАУ
     u = spsolve(K, F)
-    displacements = u.reshape((-1, 3))
+    
+    # Отсекаем фиктивные DOF Мастер-узла, нас интересуют только физические перемещения гильзы
+    displacements = u[:num_physical_dofs].reshape((-1, 3))
     disp_mag = np.linalg.norm(displacements, axis=1)
     
     return nodes.tolist(), disp_mag.tolist(), np.max(disp_mag)
