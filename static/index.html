@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Prosthetic Suite | SPbPU</title>
+    <style>
+        :root { --blue: #1e3c72; --light-blue: #2a5298; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; background: #f0f2f5; }
+        header { background: linear-gradient(135deg, var(--blue), var(--light-blue)); color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; }
+        .tabs { display: flex; background: #fff; border-bottom: 1px solid #ddd; }
+        .tab { padding: 15px 30px; cursor: pointer; border-bottom: 3px solid transparent; font-weight: 600; color: #666; }
+        .tab.active { border-color: var(--blue); color: var(--blue); }
+        .main-container { display: grid; grid-template-columns: 350px 1fr; flex-grow: 1; overflow: hidden; }
+        .sidebar { background: white; padding: 20px; border-right: 1px solid #ddd; overflow-y: auto; }
+        .content-area { position: relative; overflow: hidden; display: flex; flex-direction: column; }
+        #viewer3d, #bioView { flex-grow: 1; width: 100%; height: 100%; }
+        .hidden { display: none !important; }
+        .btn-primary { width: 100%; padding: 12px; background: var(--blue); color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 10px; }
+    </style>
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+    </script>
+</head>
+<body>
+    <header>
+        <h2>🦿 Аналитический комплекс гильз протезов</h2>
+        <div id="topStatus">Готов к работе</div>
+    </header>
+    
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab('bio')">1. Биомеханика пациента</div>
+        <div class="tab" onclick="switchTab('fem')">2. МКЭ Анализ (3D)</div>
+    </div>
+
+    <div class="main-container">
+        <div class="sidebar">
+            <div id="bioInputs">
+                <h3>Параметры пациента</h3>
+                <label>Вес (кг): <input type="number" id="weight" value="80"></label><br><br>
+                <label>Активность: 
+                    <select id="moveType">
+                        <option value="walking">Ходьба</option>
+                        <option value="running">Бег</option>
+                    </select>
+                </label><br><br>
+                <button class="btn-primary" onclick="runBioAnalysis()">Рассчитать динамику</button>
+            </div>
+            
+            <div id="femInputs" class="hidden">
+                <h3>Параметры МКЭ</h3>
+                <input type="file" id="stlInput" accept=".stl"><br><br>
+                <label>Нагрузка (Н): <input type="number" id="loadInput" value="1200"></label><br><br>
+                <label>Смещение X (мм): <input type="number" id="offsetX" value="15" style="width: 60px;"></label><br><br>
+                <label>Смещение Y (мм): <input type="number" id="offsetY" value="-20" style="width: 60px;"></label><br><br>
+                <button class="btn-primary" id="calcBtn" disabled>Загрузите STL</button>
+                
+                <div id="progressContainer" class="hidden" style="margin-top: 15px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px solid #ddd;">
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; font-weight: 600; color: var(--blue);">
+                        <span id="progressText">Инициализация...</span>
+                        <span id="progressPercent">0%</span>
+                    </div>
+                    <div style="width: 100%; background: #e9ecef; border-radius: 4px; height: 8px; overflow: hidden;">
+                        <div id="progressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--light-blue), var(--blue)); transition: width 0.4s ease-out;"></div>
+                    </div>
+                </div>
+            </div>
+            <hr>
+            <div id="resSummary">
+                <h4>Результаты:</h4>
+                <div id="resText">Запустите анализ...</div>
+            </div>
+        </div>
+
+        <div class="content-area">
+            <div id="bioView">
+                <canvas id="loadChart"></canvas>
+            </div>
+            <div id="viewer3d" class="hidden"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    
+    <script type="module" src="app.js"></script>
+    
+    <script>
+        // Логика переключения вкладок
+        function switchTab(type) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('bioInputs').classList.toggle('hidden', type !== 'bio');
+            document.getElementById('femInputs').classList.toggle('hidden', type !== 'fem');
+            document.getElementById('bioView').classList.toggle('hidden', type !== 'bio');
+            document.getElementById('viewer3d').classList.toggle('hidden', type !== 'fem');
+        }
+    </script>
+</body>
+</html>
