@@ -34,16 +34,44 @@
 
     <div class="main-container">
         <div class="sidebar">
-            <div id="bioInputs">
-                <h3>Параметры пациента</h3>
-                <label>Вес (кг): <input type="number" id="weight" value="80"></label><br><br>
-                <label>Активность: 
-                    <select id="moveType">
-                        <option value="walking">Ходьба</option>
+            <div id="bioInputs" class="sidebar-block">
+                <div class="input-group">
+                    <label>Вес (кг)</label>
+                    <input type="number" id="weight" value="80" step="1">
+                </div>
+                <div class="input-group">
+                    <label>Рост (см)</label>
+                    <input type="number" id="height" value="175" step="1">
+                </div>
+                <div class="input-group">
+                    <label>Обхват бедра (см)</label>
+                    <input type="number" id="thighGirth" value="50" step="1">
+                </div>
+                <div class="input-group">
+                    <label>Шагов в день</label>
+                    <input type="number" id="stepsDay" value="5000" step="500">
+                </div>
+                <div class="input-group">
+                    <label>Тип активности</label>
+                    <select id="moveType" onchange="toggleJumpInput()">
+                        <option value="walking">Спокойная ходьба</option>
                         <option value="running">Бег</option>
+                        <option value="jump">Прыжок</option>
                     </select>
-                </label><br><br>
-                <button class="btn-primary" onclick="runBioAnalysis()">Рассчитать динамику</button>
+                </div>
+                
+                <div id="jumpParams" class="input-group hidden">
+                    <label>Высота прыжка (м)</label>
+                    <input type="number" id="jumpHeight" value="0.4" step="0.1">
+                </div>
+
+                <button class="btn-primary" onclick="runBioAnalysis()" style="width: 100%; margin-top: 15px;">Рассчитать динамику</button>
+                
+                <div id="bioStats" class="res-card hidden" style="margin-top: 20px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+                    <p>📈 Пиковая нагрузка: <strong id="statMaxLoad">-</strong> Н</p>
+                    <p>⚠️ Риск повреждения: <strong id="statRisk">-</strong>%</p>
+                    <p>⏳ Срок службы: <strong id="statLife">-</strong> лет</p>
+                </div>
             </div>
             
             <div id="femInputs" class="hidden">
@@ -67,10 +95,15 @@
             <hr>
             <div id="resSummary">
                 <h4>Результаты:</h4>
-                <div id="resText">Запустите анализ...</div>
+                <div id="bioResults" class="result-zone">
+                    <div id="resTextBio">Запустите биомеханический анализ...</div>
+                </div>
+                
+                <div id="femResults" class="result-zone hidden">
+                    <div id="resTextFem">Загрузите модель для расчета напряжений...</div>
+                </div>
             </div>
-        </div>
-
+        </div>   
         <div class="content-area">
             <div id="bioView">
                 <canvas id="loadChart"></canvas>
@@ -88,10 +121,18 @@
         function switchTab(type) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             event.target.classList.add('active');
+            
+            // Переключение инпутов
             document.getElementById('bioInputs').classList.toggle('hidden', type !== 'bio');
             document.getElementById('femInputs').classList.toggle('hidden', type !== 'fem');
+            
+            // Переключение вьюверов (график/3D)
             document.getElementById('bioView').classList.toggle('hidden', type !== 'bio');
             document.getElementById('viewer3d').classList.toggle('hidden', type !== 'fem');
+
+            // Переключение текстовых результатов
+            document.getElementById('bioResults').classList.toggle('hidden', type !== 'bio');
+            document.getElementById('femResults').classList.toggle('hidden', type !== 'fem');
         }
     </script>
 </body>
