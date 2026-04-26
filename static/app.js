@@ -6,66 +6,94 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 // ЧАСТЬ 1: БИОМЕХАНИКА И ГРАФИКИ (CHART.JS)
 // ==========================================
 
-let chart = null;
+// Функция для показа/скрытия доп. полей
+window.toggleJumpInput = () => {
+    const isJump = document.getElementById('moveType').value === 'jump';
+    document.getElementById('jumpParams').classList.toggle('hidden', !isJump);
+};
 
 window.runBioAnalysis = async () => {
     const btn = event.target;
-    const originalText = btn.textContent;
-    btn.textContent = "Считаем...";
+    btn.textContent = "Расчет...";
     btn.disabled = true;
 
     try {
-        const data = {
-            weight: parseFloat(document.getElementById('weight').value) || 80,
-            thigh_girth: 55, 
-            movement_type: document.getElementById('moveType').value
+        // Собираем все новые данные
+        const payload = {
+            weight: parseFloat(document.getElementById('weight').value),
+            height: parseFloat(document.getElementById('height').value),
+            thigh_girth: parseFloat(document.getElementById('thighGirth').value),
+            steps_per_day: parseInt(document.getElementById('stepsDay').value),
+            movement_type: document.getElementById('moveType').value,
+            jump_height: parseFloat(document.getElementById('jumpHeight').value) || null,
+            socket: {
+                material: "carbon_fiber", // Можно добавить выбор в HTML позже
+                critical_load: 3000
+            }
         };
 
         const res = await fetch('/api/analyze', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(data)
-        });
+            body: JSON.stringify(payload)
+        });  
 
-        if (!res.ok) throw new Error(`Ошибка сервера: ${await res.text()}`);
+        if (!res.ok) throw new Error(await res.text());
         const result = await res.json();
-        
+
+        // 1. Обновляем текстовые показатели
+        document.getElementById('bioStats').classList.remove('hidden');
+        document.getElementById('statMaxLoad').textContent = Math.round(result.max_load);
+        document.getElementById('statRisk').textContent = Math.round(result.risk_percentage);
+        document.getElementById('statLife').textContent = result.service_life;
+
+        // 2. Обновляем поле нагрузки для МКЭ (автоматический перенос данных)
         document.getElementById('loadInput').value = Math.round(result.max_load);
-        
-        const recsHtml = result.recommendations.map(r => `<li style="margin-bottom: 5px;">${r}</li>`).join('');
-        const lifeColor = result.service_life < 2 ? 'red' : 'green';
-        
-        document.getElementById('resText').innerHTML = `
-            <b>Срок службы:</b> <span style="color: ${lifeColor}">${result.service_life} лет</span><br>
-            <b>Пиковая нагрузка:</b> ${Math.round(result.max_load)} Н<br><br>
-            <ul style="padding-left: 20px; font-size: 14px; color: #444; margin-top: 10px;">${recsHtml}</ul>
-        `;
 
-        if (chart) chart.destroy();
-        chart = new Chart(document.getElementById('loadChart'), {
-            type: 'line',
-            data: {
-                labels: result.time_data.map(t => t.toFixed(2)),
-                datasets: [{ 
-                    label: 'Динамика нагрузки (Н)', 
-                    data: result.load_data, 
-                    borderColor: '#1e3c72',
-                    backgroundColor: 'rgba(30, 60, 114, 0.1)',
-                    fill: true,
-                    tension: 0.3
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: false }
-        });
+        // 3. Выводим рекомендации
+        const recsHtml = result.recommendations.map(r => `<li>${r}</li>`).join('');
+        document.getElementById('resTextBio').innerHTML = `<ul style="padding-left: 20px;">${recsHtml}</ul>`;
 
-    } catch (error) {
-        console.error("Ошибка:", error);
-        alert("Произошла ошибка биомеханики:\n" + error.message);
+        // 4. Отрисовываем график (Chart.js)
+        updateChart(result.time_data, result.load_data);
+
+    } catch (e) {
+        console.error(e);
+        alert("Ошибка анализа: " + e.message);
     } finally {
-        btn.textContent = originalText;
+        btn.textContent = "Рассчитать динамику";
         btn.disabled = false;
     }
 };
+
+// Вспомогательная функция для обновления графика
+function updateChart(labels, data) {
+    const ctx = document.getElementById('loadChart').getContext('2d');
+    if (window.myChart) window.myChart.destroy();
+    
+    window.myChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels.map(l => l.toFixed(2)),
+            datasets: [{
+                label: 'Нагрузка (Н)',
+                data: data,
+                borderColor: '#1e3c72',
+                backgroundColor: 'rgba(30, 60, 114, 0.1)',
+                fill: true,
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { beginAtZero: true, title: { display: true, text: 'Ньютоны' } },
+                x: { title: { display: true, text: 'Время (сек)' } }
+            }
+        }
+    });
+}
 
 // ==========================================
 // ЧАСТЬ 2: МКЭ И 3D (THREE.JS)
@@ -246,8 +274,18 @@ document.getElementById('calcBtn').addEventListener('click', async () => {
         }
         
         if (data.status === "success") {
-            btn.textContent = `Успех! Макс. смещение: ${data.max_stress} мм`;
-            
+            // Вместо того чтобы менять только текст кнопки, выводим данные в блок для результатов МКЭ
+            const femContainer = document.getElementById('resTextFem');
+            if (femContainer) {
+                femContainer.innerHTML = `
+                    <div style="background: #e8f5e9; border-left: 4px solid #28a745; padding: 10px; margin-top: 10px;">
+                        <p style="color: #28a745; font-weight: bold; margin: 0 0 5px 0;">✅ Расчет выполнен успешно</p>
+                        <p style="margin: 2px 0;">📏 Макс. смещение: <strong>${data.max_stress.toFixed(4)} мм</strong></p>
+                        <p style="margin: 2px 0;">🧊 Узлов в сетке: ${data.fem_nodes.length / 5}</p>
+                        <p style="font-size: 0.85em; color: #666; margin-top: 5px;">* Цветовая карта обновлена на модели</p>
+                    </div>
+                `;
+            }
             // Раскраска тепловой карты
             const geometry = currentMesh.geometry;
             const positions = geometry.attributes.position;
