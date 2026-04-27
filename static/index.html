@@ -13,9 +13,29 @@
         .main-container { display: grid; grid-template-columns: 350px 1fr; flex-grow: 1; overflow: hidden; }
         .sidebar { background: white; padding: 20px; border-right: 1px solid #ddd; overflow-y: auto; }
         .content-area { position: relative; overflow: hidden; display: flex; flex-direction: column; }
-        #viewer3d, #bioView { flex-grow: 1; width: 100%; height: 100%; }
+        
+        /* Добавили position: relative для позиционирования легенды внутри 3D окна */
+        #viewer3d, #bioView { flex-grow: 1; width: 100%; height: 100%; position: relative; }
+        
         .hidden { display: none !important; }
-        .btn-primary { width: 100%; padding: 12px; background: var(--blue); color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 10px; }
+        .btn-primary { width: 100%; padding: 12px; background: var(--blue); color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 10px; font-weight: bold;}
+        .styled-select { width: 100%; padding: 10px; margin-top: 8px; border-radius: 6px; border: 1px solid #ccc; font-family: inherit; font-size: 14px; background: #fff; }
+
+        /* Стили для шкалы напряжений */
+        #legendOverlay {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px 20px;
+            border-radius: 10px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+            pointer-events: none; /* Чтобы мышка проходила сквозь легенду на 3D сцену */
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
     </style>
     <script type="importmap">
         { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
@@ -38,7 +58,7 @@
                 <h3>Параметры пациента</h3>
                 <label>Вес (кг): <input type="number" id="weight" value="80"></label><br><br>
                 <label>Активность: 
-                    <select id="moveType">
+                    <select id="moveType" class="styled-select" style="margin-top:0;">
                         <option value="walking">Ходьба</option>
                         <option value="running">Бег</option>
                     </select>
@@ -49,9 +69,16 @@
             <div id="femInputs" class="hidden">
                 <h3>Параметры МКЭ</h3>
                 <input type="file" id="stlInput" accept=".stl"><br><br>
-                <label>Нагрузка (Н): <input type="number" id="loadInput" value="1200"></label><br><br>
-                <label>Смещение X (мм): <input type="number" id="offsetX" value="15" style="width: 60px;"></label><br><br>
-                <label>Смещение Y (мм): <input type="number" id="offsetY" value="-20" style="width: 60px;"></label><br><br>
+                <label>Нагрузка (Н): <input type="number" id="loadInput" value="1200" style="width: 80px;"></label><br><br>
+                
+                <div style="margin-bottom: 20px;">
+                    <label style="font-weight: 600; color: var(--blue); font-size: 14px;">Испытание по ГОСТ 10328:</label><br>
+                    <select id="gostCondition" class="styled-select">
+                        <option value="I">Условие I (Пяточное нагружение)</option>
+                        <option value="II" selected>Условие II (Носочное нагружение)</option>
+                    </select>
+                </div>
+
                 <button class="btn-primary" id="calcBtn" disabled>Загрузите STL</button>
                 
                 <div id="progressContainer" class="hidden" style="margin-top: 15px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px solid #ddd;">
@@ -69,22 +96,44 @@
                 <h4>Результаты:</h4>
                 <div id="resText">Запустите анализ...</div>
             </div>
+            
+            <div id="techReport" class="hidden" style="margin-top: 20px; font-size: 13px; color: #555; background: #fff; border: 1px solid #eee; border-radius: 8px; padding: 15px;">
+                <h4 style="margin-top: 0; color: var(--blue); border-bottom: 1px solid #eee; padding-bottom: 5px;">Технический отчет</h4>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr><td style="padding: 4px 0;">Узлов сетки:</td><td id="statNodes" style="text-align: right; font-weight: bold;">-</td></tr>
+                    <tr><td style="padding: 4px 0;">Элементов:</td><td id="statElems" style="text-align: right; font-weight: bold;">-</td></tr>
+                    <tr><td style="padding: 4px 0;">Slave-узлов (RBE2):</td><td id="statSlaves" style="text-align: right; font-weight: bold;">-</td></tr>
+                    <tr><td style="padding: 4px 0;">Тип КЭ:</td><td id="statType" style="text-align: right; font-weight: bold;">-</td></tr>
+                    <tr style="border-top: 1px solid #eee;"><td style="padding: 8px 0 0 0;">Время расчета:</td><td id="statTime" style="padding: 8px 0 0 0; text-align: right; font-weight: bold; color: #28a745;">-</td></tr>
+                </table>
+            </div>
+            
         </div>
 
         <div class="content-area">
             <div id="bioView">
                 <canvas id="loadChart"></canvas>
             </div>
-            <div id="viewer3d" class="hidden"></div>
+            <div id="viewer3d" class="hidden">
+                <div id="legendOverlay" class="hidden">
+                    <div style="font-weight: 600; font-size: 13px; color: #444; margin-bottom: 10px;">Результат CalculiX</div>
+                    <div style="display: flex; align-items: stretch; height: 180px;">
+                        <div style="display: flex; flex-direction: column; justify-content: space-between; margin-right: 12px; font-size: 12px; font-weight: bold; color: #333; text-align: right;">
+                            <span id="legendMax">Max</span>
+                            <span id="legendMid">Mid</span>
+                            <span>0.0</span>
+                        </div>
+                        <div style="width: 24px; border-radius: 4px; border: 1px solid #bbb; background: linear-gradient(to top, hsl(240, 100%, 50%), hsl(180, 100%, 50%), hsl(120, 100%, 50%), hsl(60, 100%, 50%), hsl(0, 100%, 50%));"></div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
-    
     <script type="module" src="app.js"></script>
     
     <script>
-        // Логика переключения вкладок
         function switchTab(type) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             event.target.classList.add('active');

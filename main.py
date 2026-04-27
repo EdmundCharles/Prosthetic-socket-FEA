@@ -1,16 +1,23 @@
 from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import shutil, os
-
-from solver import process_and_simulate  # Твое МКЭ ядро
-from biomechanics import MovementRequest, calculate_bio_load, get_recommendations # Коллега
 import numpy as np
+
+# Твое новое промышленное МКЭ ядро
+from solver_ccx import process_socket_analysis
+
+# Логика коллеги
+from biomechanics import MovementRequest, calculate_bio_load, get_recommendations
 
 app = FastAPI(title="Unified Prosthetic Suite")
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+# ==========================================
+# РОУТ 1: БИОМЕХАНИКА
+# ==========================================
 @app.post("/api/analyze")
 async def analyze_bio(request: MovementRequest):
     time_data, load_data, duration = calculate_bio_load(request)
@@ -29,13 +36,47 @@ async def analyze_bio(request: MovementRequest):
         "recommendations": get_recommendations(max_load, risk, service_life, request.movement_type, request.socket.material)
     }
 
+# ==========================================
+# РОУТ 2: МКЭ И CALCULIX
+# ==========================================
 @app.post("/api/calculate")
-async def calculate_fem(file: UploadFile = File(...), load_newtons: float = Form(...), offset_x: float = Form(0.0), offset_y: float = Form(0.0)):
+async def calculate_fem(
+    file: UploadFile = File(...), 
+    load_newtons: float = Form(...), 
+    condition: str = Form("II") # <--- ИЗМЕНЕНИЕ: принимаем условие ГОСТа вместо оффсетов
+):
     temp_path = f"temp_{file.filename}"
-    with open(temp_path, "wb") as buffer: shutil.copyfileobj(file.file, buffer)
+    
+    # Сохраняем файл
+    with open(temp_path, "wb") as buffer: 
+        shutil.copyfileobj(file.file, buffer)
+        
     try:
-        return process_and_simulate(temp_path, load_newtons, offset_x, offset_y)
+        # <--- ИЗМЕНЕНИЕ: Передаем ровно 3 аргумента в новый оркестратор
+        result = process_socket_analysis(temp_path, load_newtons, condition)
+        
+        # Переупаковываем результат для фронтенда (Three.js)
+        return {
+            "status": "success",
+            "fem_nodes": result["nodes"],
+            "displacements": result.get("displacements", []),
+            "fem_values": result["fem_values"],
+            "max_stress": result["max_stress"],
+            "bottom_coords": result["bottom_nodes"],
+            "top_coords": result["top_nodes"],
+            "master_coords": result.get("master_coords", []), 
+            "force_vector": result.get("force_vector", []),
+            "stats": result.get("stats", {})
+        }
+    except Exception as e:
+        print(f"Ошибка расчета: {e}")
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
     finally:
-        if os.path.exists(temp_path): os.remove(temp_path)
+        # Очищаем временный STL
+        if os.path.exists(temp_path): 
+            os.remove(temp_path)
 
+# ==========================================
+# СТАТИКА
+# ==========================================
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
