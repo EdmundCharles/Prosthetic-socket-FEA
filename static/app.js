@@ -37,7 +37,7 @@ window.runBioAnalysis = async () => {
             <ul style="padding-left: 15px; margin-top: 8px; font-size: 12px;">${recsHtml}</ul>
         `;
 
-        if (chart) chart.destroy();
+        if (chart) chart.destroy(); // С Chart.js всё ок, у него есть метод destroy
         chart = new Chart(document.getElementById('loadChart'), {
             type: 'line',
             data: { 
@@ -85,7 +85,6 @@ scene.add(dirLight);
 const grid = new THREE.GridHelper(400, 40, 0xcccccc, 0xdddddd);
 scene.add(grid);
 
-// --- ВОЗВРАЩАЕМ ЦИФРЫ НА СЕТКЕ КООРДИНАТ ---
 function createTextSprite(text) {
     const canvas = document.createElement('canvas');
     canvas.width = 128; canvas.height = 64;
@@ -104,7 +103,6 @@ for (let i = -200; i <= 200; i += 50) {
     let spriteX = createTextSprite(i + ' мм'); spriteX.position.set(i, 0, 20); scene.add(spriteX);
     let spriteZ = createTextSprite(i + ' мм'); spriteZ.position.set(20, 0, i); scene.add(spriteZ);
 }
-// ------------------------------------------
 
 const modelGroup = new THREE.Group(); 
 modelGroup.rotation.x = -Math.PI / 2; 
@@ -117,6 +115,24 @@ modelGroup.add(helpersGroup);
 
 let vertexMap = [];
 let geometryOffsets = {x: 0, y: 0, z: 0};
+
+// === ФУНКЦИЯ ЗАЩИТЫ ОТ УТЕЧЕК ПАМЯТИ (GARBAGE COLLECTION) ===
+function disposeHierarchy(obj) {
+    if (!obj) return;
+    if (obj.children && obj.children.length > 0) {
+        for (let i = obj.children.length - 1; i >= 0; i--) {
+            const child = obj.children[i];
+            disposeHierarchy(child);
+            obj.remove(child);
+        }
+    }
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+        else obj.material.dispose();
+    }
+}
+// ============================================================
 
 const resize = () => {
     if (container.clientWidth === 0) return;
@@ -158,9 +174,10 @@ document.getElementById('stlInput').addEventListener('change', (e) => {
     
     const reader = new FileReader();
     reader.onload = (event) => {
-        if (currentMesh) modelGroup.remove(currentMesh);
-        if (ghostMesh) modelGroup.remove(ghostMesh);
-        helpersGroup.clear();
+        // ОЧИСТКА ПАМЯТИ ПРИ ЗАГРУЗКЕ НОВОЙ МОДЕЛИ
+        if (currentMesh) { disposeHierarchy(currentMesh); modelGroup.remove(currentMesh); }
+        if (ghostMesh) { disposeHierarchy(ghostMesh); modelGroup.remove(ghostMesh); }
+        disposeHierarchy(helpersGroup);
         vertexMap = [];
 
         const geometry = new STLLoader().parse(event.target.result);
@@ -207,7 +224,6 @@ document.getElementById('calcBtn').addEventListener('click', async () => {
     prog.style.width = '15%';
     document.getElementById('topStatus').textContent = "Выполняется МКЭ анализ...";
 
-    // Фейковая анимация прогресса для UX
     let progress = 15;
     const progressInterval = setInterval(() => {
         if (progress < 90) {
@@ -227,7 +243,6 @@ document.getElementById('calcBtn').addEventListener('click', async () => {
 
         document.getElementById('topStatus').textContent = "Расчет успешно завершен";
         
-        // --- ВОЗВРАЩАЕМ ПАНЕЛИ И СТАТИСТИКУ ---
         document.getElementById('legendOverlay').classList.remove('hidden');
         document.getElementById('resSummary').classList.remove('hidden');
         document.getElementById('techReport').classList.remove('hidden');
@@ -245,7 +260,6 @@ document.getElementById('calcBtn').addEventListener('click', async () => {
             document.getElementById('statElems').textContent = data.stats.elements_count.toLocaleString();
             document.getElementById('statTime').textContent = data.stats.solve_time + " с";
         }
-        // -------------------------------------
 
         const geom = currentMesh.geometry;
         const origPos = geom.attributes.originalPosition;
@@ -279,9 +293,9 @@ document.getElementById('calcBtn').addEventListener('click', async () => {
         
         applyDeformation(parseFloat(document.getElementById('dispScale').value));
 
-        // --- ВОЗВРАЩАЕМ ОТРИСОВКУ ВЕКТОРОВ И СВЯЗЕЙ ---
-        helpersGroup.clear();
-        
+        // ОЧИСТКА ПАМЯТИ ОТ СТАРЫХ ЛИНИЙ ПЕРЕД РИСОВАНИЕМ НОВЫХ
+        disposeHierarchy(helpersGroup);
+
         if (data.bottom_coords && data.bottom_coords.length > 0) {
             const markerMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshBasicMaterial({ color: 0xff0000 }), data.bottom_coords.length);
             const dummy = new THREE.Object3D();
@@ -315,7 +329,6 @@ document.getElementById('calcBtn').addEventListener('click', async () => {
                 helpersGroup.add(new THREE.ArrowHelper(dir, masterPos, 70, 0xdc2626, 15, 8));
             }
         }
-        // ----------------------------------------------
 
     } catch (e) { 
         clearInterval(progressInterval);
