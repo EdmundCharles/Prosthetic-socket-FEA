@@ -3,6 +3,7 @@ import subprocess
 import numpy as np
 import pyvista as pv
 import gmsh
+import math
 import time
 from scipy.spatial import cKDTree
 
@@ -12,25 +13,46 @@ from scipy.spatial import cKDTree
 def prepare_volume_mesh(stl_path, target_element_size=5.0):
     print("Оптимизация STL через PyVista...")
     mesh = pv.read(stl_path)
-    if mesh.n_points > 50000:
-        reduction_factor = 1.0 - (50000 / mesh.n_points)
-        mesh = mesh.decimate(reduction_factor)
+    
+    # 1. ОБЯЗАТЕЛЬНАЯ СШИВКА (Лечим разорванные треугольники после выгрузки из браузера)
+    mesh = mesh.clean()
+    
+    # 2. УБРАЛИ АГРЕССИВНОЕ СЖАТИЕ
+    # Тонкостенные гильзы схлопываются при сильном сжатии (вызывая PLC Error).
+    # Сжимаем максимум на 50% и ТОЛЬКО если файл гигантский (>100k точек), чтобы не завис сервер.
+    if mesh.n_points > 100000:
+        mesh = mesh.decimate(0.5)
+        mesh = mesh.clean()
     
     clean_stl_path = "temp_clean.stl"
     mesh.save(clean_stl_path)
 
-    print("Генерация объемной сетки через Gmsh...")
+    print("Генерация CAD-геометрии и объемной сетки через Gmsh...")
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0) 
     
     gmsh.merge(clean_stl_path)
-    gmsh.model.geo.addSurfaceLoop([1], 1)
-    gmsh.model.geo.addVolume([1], 1)
+    
+    # 3. МАГИЯ GMSH (Восстановление B-Rep)
+    # Заставляем Gmsh воспринять STL как гладкую CAD-деталь
+    gmsh.model.mesh.classifySurfaces(40 * math.pi / 180, True, True, math.pi)
+    gmsh.model.mesh.createGeometry()
     gmsh.model.geo.synchronize()
     
-    # ПРИМЕНЯЕМ РАЗМЕР СЕТКИ ИЗ ИНТЕРФЕЙСА
-    gmsh.option.setNumber("Mesh.MeshSizeMin", target_element_size * 0.5)
+    # Собираем поверхности в замкнутый объем
+    s_entities = gmsh.model.getEntities(2)
+    s_tags = [tag for dim, tag in s_entities]
+    
+    sl = gmsh.model.geo.addSurfaceLoop(s_tags)
+    gmsh.model.geo.addVolume([sl])
+    gmsh.model.geo.synchronize()
+
+    # 4. GMSH САМ НАРЕЗАЕТ КРУПНУЮ СЕТКУ
+    gmsh.option.setNumber("Mesh.MeshSizeMin", target_element_size * 0.3) # Min размер чуть меньше, чтобы пролезть в углы
     gmsh.option.setNumber("Mesh.MeshSizeMax", target_element_size)
+    gmsh.option.setNumber("Mesh.Optimize", 1)
+    gmsh.option.setNumber("Mesh.OptimizeNetgen", 1) 
+    
     gmsh.model.mesh.generate(3)
 
     node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
@@ -41,7 +63,7 @@ def prepare_volume_mesh(stl_path, target_element_size=5.0):
     elements_raw = []
     
     for etype, enode_tags in zip(elem_types, elem_node_tags):
-        if etype == 4: # Строго линейные C3D4
+        if etype == 4: 
             nodes_per_elem = np.array(enode_tags).reshape(-1, 4)
             mapped = np.array([tag_to_idx.get(t, -1) for t in nodes_per_elem.flatten()]).reshape(-1, 4)
             valid_mask = (mapped != -1).all(axis=1)
@@ -52,7 +74,7 @@ def prepare_volume_mesh(stl_path, target_element_size=5.0):
 
     elements_raw = np.array(elements_raw)
     if len(elements_raw) == 0:
-        raise ValueError("Gmsh не смог создать сетку. Уменьшите размер КЭ.")
+        raise ValueError("Gmsh не смог создать сетку. Убедитесь, что модель замкнута.")
 
     used_nodes = np.unique(elements_raw)
     clean_nodes = nodes_raw[used_nodes]
@@ -63,7 +85,6 @@ def prepare_volume_mesh(stl_path, target_element_size=5.0):
     clean_elements = mapping[elements_raw]
 
     return clean_nodes, clean_elements
-
 # ==========================================
 # БЛОК 2: ПОИСК УЗЛОВ И ГОСТ
 # ==========================================
@@ -81,7 +102,7 @@ def get_internal_slave_nodes(nodes, elements, depth=150.0):
     
     surf_points, surf_normals = surf.points, surf['Normals']
     max_z = np.max(nodes[:, 2])
-    top_mask = surf_points[:, 2] >= (max_z - depth) # ПРИМЕНЯЕМ ГЛУБИНУ
+    top_mask = surf_points[:, 2] >= (max_z - depth)
     
     if not np.any(top_mask): return []
     cx, cy = np.mean(surf_points[top_mask, 0]), np.mean(surf_points[top_mask, 1])
@@ -108,7 +129,6 @@ def get_internal_slave_nodes(nodes, elements, depth=150.0):
     _, slave_indices = tree.query(internal_coords)
     unique_slaves = list(set(slave_indices.tolist()))
     
-    # Лимит для стабильности решателя
     if len(unique_slaves) > 300:
         step = len(unique_slaves) // 300
         unique_slaves = unique_slaves[::step]
@@ -134,7 +154,7 @@ def get_gost_load_vector(force_mag, condition, z_top, z_bottom, cx, cy):
     return [pt_x, pt_y, z_top + 50.0], [fx, fy, fz]
 
 # ==========================================
-# БЛОК 3: ИНТЕГРАЦИЯ CALCULIX
+# БЛОК 3: ИНТЕГРАЦИЯ CALCULIX (С УМНЫМ ЛОГИРОВАНИЕМ)
 # ==========================================
 def generate_inp(nodes, elements, bottom_nodes, top_nodes, force_vector, master_coords, material_type="petg_ortho", job_name="job"):
     with open(f"{job_name}.inp", "w") as f:
@@ -156,7 +176,6 @@ def generate_inp(nodes, elements, bottom_nodes, top_nodes, force_vector, master_
         f.write("*MATERIAL, NAME=FGF_PETG\n")
         if material_type == "petg_ortho":
             f.write("*ELASTIC, TYPE=ENGINEERING CONSTANTS\n")
-            # 2200, 2200, 1500 (Ez ниже), vxy, vxz, vyz, Gxy, Gxz, Gyz
             f.write("2200.0, 2200.0, 1500.0, 0.38, 0.38, 0.38, 800.0, 550.0,\n550.0\n")
         else:
             f.write("*ELASTIC\n2100.0, 0.38\n")
@@ -171,7 +190,18 @@ def run_ccx(job_name="job"):
     my_env = os.environ.copy()
     my_env["OMP_NUM_THREADS"] = "6"
     process = subprocess.run(["ccx_2.23", "-i", job_name], env=my_env, capture_output=True, text=True)
-    if process.returncode != 0 or not os.path.exists(f"{job_name}.dat"): return False
+    
+    # === ВЫЛАВЛИВАЕМ РЕАЛЬНУЮ ОШИБКУ ===
+    if process.returncode != 0 or not os.path.exists(f"{job_name}.dat"):
+        log_output = process.stdout + "\n" + process.stderr
+        if os.path.exists(f"{job_name}.out"):
+            with open(f"{job_name}.out", "r") as f:
+                log_output += "\n" + f.read()[-1500:] # Захватываем конец лога
+        
+        # Обрезаем вывод, чтобы алерт в браузере не стал бесконечным
+        error_msg = f"КРИТИЧЕСКИЙ СБОЙ CalculiX (Код {process.returncode})\nПодробности лога:\n{log_output[-800:]}"
+        raise RuntimeError(error_msg)
+        
     return True
 
 def parse_dat(num_nodes, job_name="job"):
@@ -205,9 +235,8 @@ def process_socket_analysis(stl_path, load_newtons, condition="II", mesh_size=5.
     z_top, z_bottom = np.max(nodes[:, 2]), np.min(nodes[:, 2])
     master_coords, force_vector = get_gost_load_vector(load_newtons, condition, z_top, z_bottom, cx, cy)
 
-    # Передаем материал в генератор
     generate_inp(nodes, elements, bottom_nodes, top_nodes, force_vector, master_coords, material, job_name)
-    if not run_ccx(job_name): raise RuntimeError("Ошибка CalculiX. Проверьте лог сервера.")
+    run_ccx(job_name) # Функция сама выбросит детальное исключение при ошибке
         
     displacements, disp_mag, max_disp = parse_dat(len(nodes), job_name)
     

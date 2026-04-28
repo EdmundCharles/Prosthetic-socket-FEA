@@ -37,7 +37,7 @@ window.runBioAnalysis = async () => {
             <ul style="padding-left: 15px; margin-top: 8px; font-size: 12px;">${recsHtml}</ul>
         `;
 
-        if (chart) chart.destroy(); // С Chart.js всё ок, у него есть метод destroy
+        if (chart) chart.destroy();
         chart = new Chart(document.getElementById('loadChart'), {
             type: 'line',
             data: { 
@@ -110,13 +110,14 @@ scene.add(modelGroup);
 
 let currentMesh = null;
 let ghostMesh = null;
+let wireframeMesh = null;
 let helpersGroup = new THREE.Group();
 modelGroup.add(helpersGroup);
 
 let vertexMap = [];
 let geometryOffsets = {x: 0, y: 0, z: 0};
 
-// === ФУНКЦИЯ ЗАЩИТЫ ОТ УТЕЧЕК ПАМЯТИ (GARBAGE COLLECTION) ===
+// === ФУНКЦИЯ ЗАЩИТЫ ОТ УТЕЧЕК ПАМЯТИ ===
 function disposeHierarchy(obj) {
     if (!obj) return;
     if (obj.children && obj.children.length > 0) {
@@ -132,7 +133,7 @@ function disposeHierarchy(obj) {
         else obj.material.dispose();
     }
 }
-// ============================================================
+// ========================================
 
 const resize = () => {
     if (container.clientWidth === 0) return;
@@ -151,11 +152,17 @@ const applyDeformation = (scale) => {
     const pos = currentMesh.geometry.attributes.position;
     const orig = currentMesh.geometry.attributes.originalPosition;
     for (let i = 0; i < orig.count; i++) {
-        pos.setXYZ(i, orig.getX(i) + vertexMap[i].dx * scale, orig.getY(i) + vertexMap[i].dy * scale, orig.getZ(i) + vertexMap[i].dz * scale);
+        pos.setXYZ(
+            i, 
+            orig.getX(i) + vertexMap[i].dx * scale, 
+            orig.getY(i) + vertexMap[i].dy * scale, 
+            orig.getZ(i) + vertexMap[i].dz * scale
+        );
     }
     pos.needsUpdate = true;
 };
 
+// Слушатели интерфейса визуализации
 document.getElementById('dispScale').addEventListener('input', (e) => {
     const val = parseFloat(e.target.value);
     document.getElementById('scaleVal').textContent = val.toFixed(1);
@@ -166,6 +173,11 @@ document.getElementById('showGhost').addEventListener('change', (e) => {
     if (ghostMesh) ghostMesh.visible = e.target.checked;
 });
 
+document.getElementById('showWireframe').addEventListener('change', (e) => {
+    if (wireframeMesh) wireframeMesh.visible = e.target.checked;
+});
+
+// Загрузка STL
 document.getElementById('stlInput').addEventListener('change', (e) => {
     const file = e.target.files[0]; 
     if (!file) return;
@@ -174,7 +186,7 @@ document.getElementById('stlInput').addEventListener('change', (e) => {
     
     const reader = new FileReader();
     reader.onload = (event) => {
-        // ОЧИСТКА ПАМЯТИ ПРИ ЗАГРУЗКЕ НОВОЙ МОДЕЛИ
+        // Очищаем старые модели из GPU
         if (currentMesh) { disposeHierarchy(currentMesh); modelGroup.remove(currentMesh); }
         if (ghostMesh) { disposeHierarchy(ghostMesh); modelGroup.remove(ghostMesh); }
         disposeHierarchy(helpersGroup);
@@ -189,12 +201,30 @@ document.getElementById('stlInput').addEventListener('change', (e) => {
         geometry.computeVertexNormals();
         geometry.setAttribute('originalPosition', geometry.attributes.position.clone());
         
+        // Основной меш
         currentMesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xe5e7eb }));
-        ghostMesh = new THREE.Mesh(geometry.clone(), new THREE.MeshStandardMaterial({ color: 0x9ca3af, transparent: true, opacity: 0.15, depthWrite: false }));
+        
+        // Черный каркас сетки (wireframe)
+        wireframeMesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ 
+            color: 0x000000, 
+            wireframe: true, 
+            transparent: true, 
+            opacity: 0.15, 
+            depthWrite: false 
+        }));
+        wireframeMesh.visible = document.getElementById('showWireframe').checked;
+        currentMesh.add(wireframeMesh);
+        
+        // Призрачный меш исходной формы
+        ghostMesh = new THREE.Mesh(geometry.clone(), new THREE.MeshStandardMaterial({ 
+            color: 0x9ca3af, 
+            transparent: true, 
+            opacity: 0.15, 
+            depthWrite: false 
+        }));
         ghostMesh.visible = document.getElementById('showGhost').checked;
         
         modelGroup.add(currentMesh, ghostMesh);
-        
         controls.target.copy(new THREE.Vector3(0, 0, (box.max.z - box.min.z) / 2));
         
         document.getElementById('calcBtn').disabled = false;
