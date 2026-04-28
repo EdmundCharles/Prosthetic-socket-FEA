@@ -2,413 +2,330 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
-// ==========================================
-// ЧАСТЬ 1: БИОМЕХАНИКА И ГРАФИКИ (CHART.JS)
-// ==========================================
-
 let chart = null;
 
+// ==========================================
+// 1. БИОМЕХАНИКА (CHART.JS)
+// ==========================================
 window.runBioAnalysis = async () => {
-    const btn = event.target;
+    const btn = event.target; 
     const originalText = btn.textContent;
-    btn.textContent = "Считаем...";
+    btn.textContent = "Считаем..."; 
     btn.disabled = true;
 
     try {
-        const data = {
-            weight: parseFloat(document.getElementById('weight').value) || 80,
-            thigh_girth: 55, 
-            movement_type: document.getElementById('moveType').value
-        };
-
         const res = await fetch('/api/analyze', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(data)
+            body: JSON.stringify({ 
+                weight: parseFloat(document.getElementById('weight').value) || 80, 
+                thigh_girth: 55, 
+                movement_type: document.getElementById('moveType').value 
+            })
         });
-
+        
         if (!res.ok) throw new Error(`Ошибка сервера: ${await res.text()}`);
         const result = await res.json();
         
         document.getElementById('loadInput').value = Math.round(result.max_load);
-        
         const recsHtml = result.recommendations.map(r => `<li style="margin-bottom: 5px;">${r}</li>`).join('');
-        const lifeColor = result.service_life < 2 ? 'red' : 'green';
         
+        document.getElementById('resSummary').classList.remove('hidden');
         document.getElementById('resText').innerHTML = `
-            <b>Срок службы:</b> <span style="color: ${lifeColor}">${result.service_life} лет</span><br>
-            <b>Пиковая нагрузка:</b> ${Math.round(result.max_load)} Н<br><br>
-            <ul style="padding-left: 20px; font-size: 14px; color: #444; margin-top: 10px;">${recsHtml}</ul>
+            <b>Пиковая нагрузка:</b> ${Math.round(result.max_load)} Н<br>
+            <b>Срок службы:</b> ${result.service_life} лет<br>
+            <ul style="padding-left: 15px; margin-top: 8px; font-size: 12px;">${recsHtml}</ul>
         `;
 
         if (chart) chart.destroy();
         chart = new Chart(document.getElementById('loadChart'), {
             type: 'line',
-            data: {
-                labels: result.time_data.map(t => t.toFixed(2)),
+            data: { 
+                labels: result.time_data.map(t => t.toFixed(2)), 
                 datasets: [{ 
-                    label: 'Динамика нагрузки (Н)', 
+                    label: 'Нагрузка (Н)', 
                     data: result.load_data, 
-                    borderColor: '#1e3c72',
-                    backgroundColor: 'rgba(30, 60, 114, 0.1)',
-                    fill: true,
-                    tension: 0.3
-                }]
+                    borderColor: '#15803d', 
+                    backgroundColor: 'rgba(21,128,61,0.1)', 
+                    fill: true 
+                }] 
             },
             options: { responsive: true, maintainAspectRatio: false }
         });
-
-    } catch (error) {
-        console.error("Ошибка:", error);
-        alert("Произошла ошибка биомеханики:\n" + error.message);
-    } finally {
+    } catch (e) { 
+        alert("Ошибка биомеханики: " + e.message); 
+    } finally { 
         btn.textContent = originalText;
-        btn.disabled = false;
+        btn.disabled = false; 
     }
 };
 
 // ==========================================
-// ЧАСТЬ 2: МКЭ И 3D (THREE.JS)
+// 2. ИНИЦИАЛИЗАЦИЯ 3D СЦЕНЫ (THREE.JS)
 // ==========================================
-
-let geometryOffsets = { x: 0, y: 0, z: 0 };
-
 const container = document.getElementById('viewer3d');
-const initWidth = container.clientWidth || window.innerWidth / 2;
-const initHeight = container.clientHeight || 600;
+const scene = new THREE.Scene(); 
+scene.background = new THREE.Color(0xf3f4f6);
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1e293b); 
-
-const camera = new THREE.PerspectiveCamera(45, initWidth / initHeight, 0.1, 10000);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 10000); 
 camera.position.set(300, 200, 300);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(initWidth, initHeight);
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 container.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-controls.maxPolarAngle = Math.PI / 2 + 0.1; 
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-dirLight.position.set(200, 500, 200);
+scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8); 
+dirLight.position.set(200, 500, 200); 
 scene.add(dirLight);
 
-const grid = new THREE.GridHelper(400, 40, 0x666666, 0x2a3b4c);
+const grid = new THREE.GridHelper(400, 40, 0xcccccc, 0xdddddd);
 scene.add(grid);
 
+// --- ВОЗВРАЩАЕМ ЦИФРЫ НА СЕТКЕ КООРДИНАТ ---
 function createTextSprite(text) {
     const canvas = document.createElement('canvas');
     canvas.width = 128; canvas.height = 64;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = 'transparent';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.font = 'bold 20px Arial';
-    ctx.fillStyle = '#8892b0'; 
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'transparent'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.font = 'bold 20px Arial'; ctx.fillStyle = '#6b7280'; 
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
-    const sprite = new THREE.Sprite(spriteMat);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false }));
     sprite.scale.set(30, 15, 1);
     return sprite;
 }
 
 for (let i = -200; i <= 200; i += 50) {
     if (i === 0) continue;
-    let spriteX = createTextSprite(i + ' мм');
-    spriteX.position.set(i, 0, 20); 
-    scene.add(spriteX);
-
-    let spriteZ = createTextSprite(i + ' мм');
-    spriteZ.position.set(20, 0, i);
-    scene.add(spriteZ);
+    let spriteX = createTextSprite(i + ' мм'); spriteX.position.set(i, 0, 20); scene.add(spriteX);
+    let spriteZ = createTextSprite(i + ' мм'); spriteZ.position.set(20, 0, i); scene.add(spriteZ);
 }
+// ------------------------------------------
 
-const modelGroup = new THREE.Group();
+const modelGroup = new THREE.Group(); 
 modelGroup.rotation.x = -Math.PI / 2; 
 scene.add(modelGroup);
 
 let currentMesh = null;
+let ghostMesh = null;
 let helpersGroup = new THREE.Group();
 modelGroup.add(helpersGroup);
 
-const resizeObserver = new ResizeObserver(() => {
-    if (container.clientWidth === 0 || container.clientHeight === 0) return;
+let vertexMap = [];
+let geometryOffsets = {x: 0, y: 0, z: 0};
+
+const resize = () => {
+    if (container.clientWidth === 0) return;
     camera.aspect = container.clientWidth / container.clientHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(container.clientWidth, container.clientHeight);
+};
+window.addEventListener('resize', resize);
+new ResizeObserver(resize).observe(container);
+
+// ==========================================
+// 3. ЛОГИКА ДЕФОРМАЦИИ И ФАЙЛОВ
+// ==========================================
+const applyDeformation = (scale) => {
+    if (!currentMesh || !vertexMap.length) return;
+    const pos = currentMesh.geometry.attributes.position;
+    const orig = currentMesh.geometry.attributes.originalPosition;
+    for (let i = 0; i < orig.count; i++) {
+        pos.setXYZ(i, orig.getX(i) + vertexMap[i].dx * scale, orig.getY(i) + vertexMap[i].dy * scale, orig.getZ(i) + vertexMap[i].dz * scale);
+    }
+    pos.needsUpdate = true;
+};
+
+document.getElementById('dispScale').addEventListener('input', (e) => {
+    const val = parseFloat(e.target.value);
+    document.getElementById('scaleVal').textContent = val.toFixed(1);
+    applyDeformation(val);
 });
-resizeObserver.observe(container);
 
-document.getElementById('stlInput').addEventListener('change', function(e) {
-    const file = e.target.files[0];
+document.getElementById('showGhost').addEventListener('change', (e) => {
+    if (ghostMesh) ghostMesh.visible = e.target.checked;
+});
+
+document.getElementById('stlInput').addEventListener('change', (e) => {
+    const file = e.target.files[0]; 
     if (!file) return;
-
-    const reader = new FileReader();
-    const btn = document.getElementById('calcBtn');
-    btn.textContent = "Загрузка...";
     
-    // Прячем легенду при загрузке новой модели
-    document.getElementById('legendOverlay').classList.add('hidden');
-    document.getElementById('resText').innerHTML = "Ожидание запуска МКЭ...";
-
-    reader.onload = function(event) {
+    document.getElementById('topStatus').textContent = "Чтение файла...";
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
         if (currentMesh) modelGroup.remove(currentMesh);
+        if (ghostMesh) modelGroup.remove(ghostMesh);
         helpersGroup.clear();
+        vertexMap = [];
 
-        const loader = new STLLoader();
-        const geometry = loader.parse(event.target.result);
-        
+        const geometry = new STLLoader().parse(event.target.result);
         geometry.computeBoundingBox();
         const box = geometry.boundingBox;
         
-        geometryOffsets.x = -(box.max.x + box.min.x) / 2;
-        geometryOffsets.y = -(box.max.y + box.min.y) / 2;
-        geometryOffsets.z = -box.min.z; 
-
+        geometryOffsets = { x: -(box.max.x + box.min.x)/2, y: -(box.max.y + box.min.y)/2, z: -box.min.z };
         geometry.translate(geometryOffsets.x, geometryOffsets.y, geometryOffsets.z);
         geometry.computeVertexNormals();
-
         geometry.setAttribute('originalPosition', geometry.attributes.position.clone());
-
-        const material = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.5 });
-        currentMesh = new THREE.Mesh(geometry, material);
-        modelGroup.add(currentMesh);
-
-        const center = new THREE.Vector3(0, 0, (box.max.z - box.min.z) / 2);
-        controls.target.copy(center.applyMatrix4(modelGroup.matrixWorld));
         
-        btn.textContent = "Запустить Solver";
-        btn.disabled = false;
+        currentMesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xe5e7eb }));
+        ghostMesh = new THREE.Mesh(geometry.clone(), new THREE.MeshStandardMaterial({ color: 0x9ca3af, transparent: true, opacity: 0.15, depthWrite: false }));
+        ghostMesh.visible = document.getElementById('showGhost').checked;
+        
+        modelGroup.add(currentMesh, ghostMesh);
+        
+        controls.target.copy(new THREE.Vector3(0, 0, (box.max.z - box.min.z) / 2));
+        
+        document.getElementById('calcBtn').disabled = false;
+        document.getElementById('topStatus').textContent = "Модель готова к расчету";
+        resize();
     };
     reader.readAsArrayBuffer(file);
 });
 
+// ==========================================
+// 4. ЗАПУСК МКЭ РАСЧЕТА
+// ==========================================
 document.getElementById('calcBtn').addEventListener('click', async () => {
-    const fileInput = document.getElementById('stlInput');
+    const fd = new FormData();
+    fd.append('file', document.getElementById('stlInput').files[0]);
+    fd.append('load_newtons', document.getElementById('loadInput').value);
+    fd.append('condition', document.getElementById('gostCondition').value);
+    fd.append('mesh_size', document.getElementById('meshSize').value);
+    fd.append('search_depth', document.getElementById('searchDepth').value);
+    fd.append('material', document.getElementById('matType').value);
+
     const btn = document.getElementById('calcBtn');
+    const prog = document.getElementById('progressBar');
     
-    const progContainer = document.getElementById('progressContainer');
-    const progBar = document.getElementById('progressBar');
-    const progText = document.getElementById('progressText');
-    const progPercent = document.getElementById('progressPercent');
-    
-    if (!fileInput.files.length) { alert("Сначала загрузите STL модель!"); return; }
-
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-    formData.append('load_newtons', document.getElementById('loadInput').value);
-    formData.append('condition', document.getElementById('gostCondition').value);
-
-    btn.textContent = "Идет расчет...";
     btn.disabled = true;
-    
-    // Скрываем легенду на время расчета
-    document.getElementById('legendOverlay').classList.add('hidden');
-    
-    if(progContainer) {
-        progContainer.classList.remove('hidden');
-        progBar.style.width = '0%';
-        progBar.style.background = 'linear-gradient(90deg, var(--light-blue), var(--blue))';
-    }
-    
-    let progress = 0;
-    // Уменьшаем интервал до 200 мс, так как CalculiX считает очень быстро
+    document.getElementById('progressContainer').classList.remove('hidden');
+    prog.style.width = '15%';
+    document.getElementById('topStatus').textContent = "Выполняется МКЭ анализ...";
+
+    // Фейковая анимация прогресса для UX
+    let progress = 15;
     const progressInterval = setInterval(() => {
-        if (progress < 95) {
-            // Ускоряем заполнение шкалы
-            let increment = progress < 30 ? 4 : (progress < 80 ? 2 : 0.5);
-            progress += increment;
-            
-            if(progBar) progBar.style.width = `${progress}%`;
-            if(progPercent) progPercent.textContent = `${Math.floor(progress)}%`;
-            
-            // Новые актуальные статусы для пайплайна CalculiX
-            if(progText) {
-                if (progress < 25) progText.textContent = "Подготовка 3D-сетки (PyVista , Gmsh)...";
-                else if (progress < 45) progText.textContent = "Анализ нормалей и векторов...";
-                else if (progress < 85) progText.textContent = "Расчет в CalculiX (SPOOLES/PaStiX)...";
-                else progText.textContent = "Чтение результатов (.dat)...";
-            }
+        if (progress < 90) {
+            progress += progress < 40 ? 5 : 2;
+            prog.style.width = `${progress}%`;
         }
-    }, 200);
+    }, 300);
 
     try {
-        const response = await fetch('/api/calculate', { method: 'POST', body: formData });
-        if (!response.ok) throw new Error(await response.text());
-        const data = await response.json();
+        const res = await fetch('/api/calculate', { method: 'POST', body: fd });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
         
         clearInterval(progressInterval);
-        if(progContainer) {
-            progText.textContent = "Рендеринг...";
-            progBar.style.width = '100%';
-            progPercent.textContent = '100%';
+        prog.style.width = '100%';
+        setTimeout(() => document.getElementById('progressContainer').classList.add('hidden'), 1000);
+
+        document.getElementById('topStatus').textContent = "Расчет успешно завершен";
+        
+        // --- ВОЗВРАЩАЕМ ПАНЕЛИ И СТАТИСТИКУ ---
+        document.getElementById('legendOverlay').classList.remove('hidden');
+        document.getElementById('resSummary').classList.remove('hidden');
+        document.getElementById('techReport').classList.remove('hidden');
+        
+        document.getElementById('legendMax').textContent = data.max_stress.toFixed(2);
+        document.getElementById('legendMid').textContent = (data.max_stress / 2).toFixed(2);
+
+        document.getElementById('resText').innerHTML = `
+            Максимальное смещение:<br>
+            <span style="color: #dc2626; font-size: 16px; font-weight: bold;">${data.max_stress.toFixed(2)} мм</span>
+        `;
+
+        if (data.stats) {
+            document.getElementById('statNodes').textContent = data.stats.nodes_count.toLocaleString();
+            document.getElementById('statElems').textContent = data.stats.elements_count.toLocaleString();
+            document.getElementById('statTime').textContent = data.stats.solve_time + " с";
+        }
+        // -------------------------------------
+
+        const geom = currentMesh.geometry;
+        const origPos = geom.attributes.originalPosition;
+        const colors = new Float32Array(origPos.count * 3);
+        vertexMap = new Array(origPos.count);
+
+        for (let i = 0; i < origPos.count; i++) {
+            const vx = origPos.getX(i) - geometryOffsets.x;
+            const vy = origPos.getY(i) - geometryOffsets.y;
+            const vz = origPos.getZ(i) - geometryOffsets.z;
+            
+            let minDistSq = Infinity, val = 0, dx = 0, dy = 0, dz = 0;
+            
+            for (let j = 0; j < data.fem_nodes.length; j += 5) {
+                const d2 = (vx-data.fem_nodes[j][0])**2 + (vy-data.fem_nodes[j][1])**2 + (vz-data.fem_nodes[j][2])**2;
+                if (d2 < minDistSq) { 
+                    minDistSq = d2; 
+                    val = data.fem_values[j]; 
+                    dx = data.displacements[j][0]; dy = data.displacements[j][1]; dz = data.displacements[j][2]; 
+                }
+            }
+            vertexMap[i] = {dx, dy, dz};
+            const c = new THREE.Color().setHSL((1 - Math.min(val/data.max_stress, 1))*0.66, 1, 0.5);
+            colors[i*3] = c.r; colors[i*3+1] = c.g; colors[i*3+2] = c.b;
         }
         
-        if (data.status === "success") {
-            btn.textContent = `Успех! (см. результаты)`;
-            
-            // --- ВЫВОД РЕЗУЛЬТАТОВ В UI ---
-            // 1. Показываем легенду градиента
-            const maxVal = data.max_stress;
-            document.getElementById('legendMax').textContent = maxVal.toFixed(2);
-            document.getElementById('legendMid').textContent = (maxVal / 2).toFixed(2);
-            document.getElementById('legendOverlay').classList.remove('hidden');
+        geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        currentMesh.material.vertexColors = true; 
+        currentMesh.material.color.setHex(0xffffff); 
+        currentMesh.material.needsUpdate = true;
+        
+        applyDeformation(parseFloat(document.getElementById('dispScale').value));
 
-            // 2. Выводим текст в боковое меню
-            const conditionText = document.getElementById('gostCondition').options[document.getElementById('gostCondition').selectedIndex].text;
-            const resSummary = document.getElementById('resText');
-            resSummary.innerHTML = `
-                <div style="background: #eef2f5; padding: 10px; border-radius: 6px; border-left: 4px solid var(--blue);">
-                    <b>Решатель:</b> CalculiX (MUMPS/SPOOLES)<br>
-                    <b>Режим:</b> ${conditionText}<br>
-                    <hr style="border: 0; border-top: 1px solid #ccc; margin: 8px 0;">
-                    <b>Максимальное значение:</b> <span style="color: red; font-weight: bold; font-size: 16px;">${maxVal.toFixed(2)}</span>
-                </div>
-            `;
-            // -------------------------------
-            if (data.stats) {
-                document.getElementById('techReport').classList.remove('hidden');
-                document.getElementById('statNodes').textContent = data.stats.nodes_count.toLocaleString();
-                document.getElementById('statElems').textContent = data.stats.elements_count.toLocaleString();
-                document.getElementById('statSlaves').textContent = data.stats.slave_nodes_count;
-                document.getElementById('statType').textContent = data.stats.element_type;
-                document.getElementById('statTime').textContent = data.stats.solve_time + " сек";
+        // --- ВОЗВРАЩАЕМ ОТРИСОВКУ ВЕКТОРОВ И СВЯЗЕЙ ---
+        helpersGroup.clear();
+        
+        if (data.bottom_coords && data.bottom_coords.length > 0) {
+            const markerMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshBasicMaterial({ color: 0xff0000 }), data.bottom_coords.length);
+            const dummy = new THREE.Object3D();
+            for (let i = 0; i < data.bottom_coords.length; i++) {
+                dummy.position.set(data.bottom_coords[i][0] + geometryOffsets.x, data.bottom_coords[i][1] + geometryOffsets.y, data.bottom_coords[i][2] + geometryOffsets.z);
+                dummy.updateMatrix(); markerMesh.setMatrixAt(i, dummy.matrix);
             }
-            
-            const geometry = currentMesh.geometry;
-            const positions = geometry.attributes.position;
-            const origPositions = geometry.attributes.originalPosition;
-            const colors = new Float32Array(origPositions.count * 3);
-            
-            const SCALE = 4.0; 
+            markerMesh.instanceMatrix.needsUpdate = true; helpersGroup.add(markerMesh);
+        }
 
-            for (let i = 0; i < origPositions.count; i++) {
-                const vx = origPositions.getX(i) - geometryOffsets.x;
-                const vy = origPositions.getY(i) - geometryOffsets.y;
-                const vz = origPositions.getZ(i) - geometryOffsets.z;
-
-                let minDistSq = Infinity;
-                let val = 0;
-                let dx = 0, dy = 0, dz = 0;
-
-                for (let j = 0; j < data.fem_nodes.length; j += 5) { 
-                    const diffX = vx - data.fem_nodes[j][0];
-                    const diffY = vy - data.fem_nodes[j][1];
-                    const diffZ = vz - data.fem_nodes[j][2];
-                    const d2 = diffX*diffX + diffY*diffY + diffZ*diffZ;
-                    
-                    if (d2 < minDistSq) { 
-                        minDistSq = d2; 
-                        val = data.fem_values[j]; 
-                        if(data.displacements) {
-                            dx = data.displacements[j][0];
-                            dy = data.displacements[j][1];
-                            dz = data.displacements[j][2];
-                        }
-                    }
-                }
-
-                positions.setXYZ(
-                    i, 
-                    origPositions.getX(i) + dx * SCALE, 
-                    origPositions.getY(i) + dy * SCALE, 
-                    origPositions.getZ(i) + dz * SCALE
-                );
-
-                const hue = (1 - Math.min(val / data.max_stress, 1)) * 240;
-                const c = new THREE.Color(`hsl(${hue}, 100%, 50%)`);
-                colors[i*3] = c.r; colors[i*3+1] = c.g; colors[i*3+2] = c.b;
+        if (data.top_coords && data.top_coords.length > 0 && data.master_coords) {
+            const slaveMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1.0, 8, 8), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.6 }), data.top_coords.length);
+            const dummy = new THREE.Object3D();
+            for (let i = 0; i < data.top_coords.length; i++) {
+                dummy.position.set(data.top_coords[i][0] + geometryOffsets.x, data.top_coords[i][1] + geometryOffsets.y, data.top_coords[i][2] + geometryOffsets.z);
+                dummy.updateMatrix(); slaveMesh.setMatrixAt(i, dummy.matrix);
             }
+            slaveMesh.instanceMatrix.needsUpdate = true; helpersGroup.add(slaveMesh); 
 
-            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-            positions.needsUpdate = true;
-            currentMesh.material.vertexColors = true;
-            currentMesh.material.color.setHex(0xffffff);
-            currentMesh.material.needsUpdate = true;
-
-            helpersGroup.clear();
+            const masterPos = new THREE.Vector3(data.master_coords[0] + geometryOffsets.x, data.master_coords[1] + geometryOffsets.y, data.master_coords[2] + geometryOffsets.z);
+            const lineMat = new THREE.LineBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.15 }); 
             
-            if (data.bottom_coords && data.bottom_coords.length > 0) {
-                const markerGeo = new THREE.BoxGeometry(2, 2, 2); 
-                const markerMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-                const markerMesh = new THREE.InstancedMesh(markerGeo, markerMat, data.bottom_coords.length);
-                const dummy = new THREE.Object3D();
-                for (let i = 0; i < data.bottom_coords.length; i++) {
-                    dummy.position.set(
-                        data.bottom_coords[i][0] + geometryOffsets.x, 
-                        data.bottom_coords[i][1] + geometryOffsets.y, 
-                        data.bottom_coords[i][2] + geometryOffsets.z
-                    );
-                    dummy.updateMatrix();
-                    markerMesh.setMatrixAt(i, dummy.matrix);
-                }
-                markerMesh.instanceMatrix.needsUpdate = true;
-                helpersGroup.add(markerMesh);
-            }
+            data.top_coords.forEach((p, idx) => {
+                if (idx % 15 !== 0) return;
+                const pLocal = new THREE.Vector3(p[0] + geometryOffsets.x, p[1] + geometryOffsets.y, p[2] + geometryOffsets.z);
+                helpersGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([masterPos, pLocal]), lineMat));
+            });
 
-            if (data.top_coords && data.top_coords.length > 0 && data.master_coords) {
-                const slaveGeo = new THREE.SphereGeometry(1.0, 8, 8); 
-                const slaveMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.6 }); 
-                const slaveMesh = new THREE.InstancedMesh(slaveGeo, slaveMat, data.top_coords.length);
-                const dummy = new THREE.Object3D();
-                
-                for (let i = 0; i < data.top_coords.length; i++) {
-                    dummy.position.set(
-                        data.top_coords[i][0] + geometryOffsets.x, 
-                        data.top_coords[i][1] + geometryOffsets.y, 
-                        data.top_coords[i][2] + geometryOffsets.z
-                    );
-                    dummy.updateMatrix();
-                    slaveMesh.setMatrixAt(i, dummy.matrix);
-                }
-                slaveMesh.instanceMatrix.needsUpdate = true;
-                helpersGroup.add(slaveMesh); 
-
-                const masterPos = new THREE.Vector3(
-                    data.master_coords[0] + geometryOffsets.x,
-                    data.master_coords[1] + geometryOffsets.y,
-                    data.master_coords[2] + geometryOffsets.z 
-                );
-
-                const lineMat = new THREE.LineBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.1 }); 
-                data.top_coords.forEach((p, idx) => {
-                    if (idx % 15 !== 0) return;
-                    const pLocal = new THREE.Vector3(p[0] + geometryOffsets.x, p[1] + geometryOffsets.y, p[2] + geometryOffsets.z);
-                    const lineGeo = new THREE.BufferGeometry().setFromPoints([masterPos, pLocal]);
-                    helpersGroup.add(new THREE.Line(lineGeo, lineMat));
-                });
-
-                if (data.force_vector) {
-                    const dir = new THREE.Vector3(
-                        data.force_vector[0], 
-                        data.force_vector[1], 
-                        data.force_vector[2]
-                    );
-                    dir.normalize(); 
-                    const arrow = new THREE.ArrowHelper(dir, masterPos, 70, 0xff0000, 15, 8);
-                    helpersGroup.add(arrow);
-                }
+            if (data.force_vector) {
+                const dir = new THREE.Vector3(data.force_vector[0], data.force_vector[1], data.force_vector[2]).normalize(); 
+                helpersGroup.add(new THREE.ArrowHelper(dir, masterPos, 70, 0xdc2626, 15, 8));
             }
         }
-        if(progContainer) setTimeout(() => progContainer.classList.add('hidden'), 2000);
+        // ----------------------------------------------
+
     } catch (e) { 
         clearInterval(progressInterval);
-        if(progBar) progBar.style.background = 'red';
-        if(progText) progText.textContent = "Ошибка расчета!";
-        console.error(e);
-        alert("Ошибка МКЭ:\n" + e.message); 
-    } finally {
-        setTimeout(() => { if (!btn.disabled) btn.textContent = "Запустить Solver"; }, 3000);
-        btn.disabled = false;
+        document.getElementById('progressContainer').classList.add('hidden');
+        document.getElementById('topStatus').textContent = "Ошибка при расчете";
+        alert("Сбой МКЭ: " + e.message); 
+    } finally { 
+        btn.disabled = false; 
     }
 });
 
-function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
+const animate = () => { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); };
 animate();

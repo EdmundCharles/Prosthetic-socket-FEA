@@ -43,19 +43,17 @@ async def analyze_bio(request: MovementRequest):
 async def calculate_fem(
     file: UploadFile = File(...), 
     load_newtons: float = Form(...), 
-    condition: str = Form("II") # <--- ИЗМЕНЕНИЕ: принимаем условие ГОСТа вместо оффсетов
+    condition: str = Form("II"),
+    mesh_size: float = Form(5.0),
+    search_depth: float = Form(150.0),
+    material: str = Form("petg_ortho") # Принимаем материал
 ):
     temp_path = f"temp_{file.filename}"
-    
-    # Сохраняем файл
     with open(temp_path, "wb") as buffer: 
         shutil.copyfileobj(file.file, buffer)
-        
     try:
-        # <--- ИЗМЕНЕНИЕ: Передаем ровно 3 аргумента в новый оркестратор
-        result = process_socket_analysis(temp_path, load_newtons, condition)
-        
-        # Переупаковываем результат для фронтенда (Three.js)
+        # Передаем всё в решатель
+        result = process_socket_analysis(temp_path, load_newtons, condition, mesh_size, search_depth, material)
         return {
             "status": "success",
             "fem_nodes": result["nodes"],
@@ -69,13 +67,9 @@ async def calculate_fem(
             "stats": result.get("stats", {})
         }
     except Exception as e:
-        print(f"Ошибка расчета: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
     finally:
-        # Очищаем временный STL
-        if os.path.exists(temp_path): 
-            os.remove(temp_path)
-
+        if os.path.exists(temp_path): os.remove(temp_path)
 # ==========================================
 # СТАТИКА
 # ==========================================
