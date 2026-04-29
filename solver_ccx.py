@@ -8,20 +8,20 @@ import time
 from scipy.spatial import cKDTree
 
 # ==========================================
-# БЛОК 1: ПОДГОТОВКА ГЕОМЕТРИИ
+# БЛОК 1: ПОДГОТОВКА ГЕОМЕТРИИ (АДАПТИВНАЯ СЕТКА)
 # ==========================================
 def prepare_volume_mesh(stl_path, target_element_size=5.0):
     print("Оптимизация STL через PyVista...")
     mesh = pv.read(stl_path)
     
-    # 1. ОБЯЗАТЕЛЬНАЯ СШИВКА (Лечим разорванные треугольники после выгрузки из браузера)
+    # 1. Базовая сшивка
     mesh = mesh.clean()
     
-    # 2. УБРАЛИ АГРЕССИВНОЕ СЖАТИЕ
-    # Тонкостенные гильзы схлопываются при сильном сжатии (вызывая PLC Error).
-    # Сжимаем максимум на 50% и ТОЛЬКО если файл гигантский (>100k точек), чтобы не завис сервер.
+    # 2. Аккуратное сжатие (только для сверхтяжелых файлов)
+    # Используем decimate_pro с preserve_topology=True, чтобы не порвать верхний край гильзы!
     if mesh.n_points > 100000:
-        mesh = mesh.decimate(0.5)
+        reduction_factor = 1.0 - (100000 / mesh.n_points)
+        mesh = mesh.decimate_pro(reduction_factor, preserve_topology=True)
         mesh = mesh.clean()
     
     clean_stl_path = "temp_clean.stl"
@@ -33,13 +33,11 @@ def prepare_volume_mesh(stl_path, target_element_size=5.0):
     
     gmsh.merge(clean_stl_path)
     
-    # 3. МАГИЯ GMSH (Восстановление B-Rep)
-    # Заставляем Gmsh воспринять STL как гладкую CAD-деталь
+    # 3. Восстановление B-Rep (CAD)
     gmsh.model.mesh.classifySurfaces(40 * math.pi / 180, True, True, math.pi)
     gmsh.model.mesh.createGeometry()
     gmsh.model.geo.synchronize()
     
-    # Собираем поверхности в замкнутый объем
     s_entities = gmsh.model.getEntities(2)
     s_tags = [tag for dim, tag in s_entities]
     
@@ -47,9 +45,21 @@ def prepare_volume_mesh(stl_path, target_element_size=5.0):
     gmsh.model.geo.addVolume([sl])
     gmsh.model.geo.synchronize()
 
-    # 4. GMSH САМ НАРЕЗАЕТ КРУПНУЮ СЕТКУ
-    gmsh.option.setNumber("Mesh.MeshSizeMin", target_element_size * 0.3) # Min размер чуть меньше, чтобы пролезть в углы
+    # ==============================================================
+    # 4. МАГИЯ: АДАПТАЦИЯ ПО КРИВИЗНЕ (ЛЕЧИМ "ГОРЫ" НА КРОМКАХ)
+    # ==============================================================
+    # Разрешаем генератору уменьшать элементы вплоть до 0.5 мм на острых углах и кромках
+    gmsh.option.setNumber("Mesh.MeshSizeMin", 1) 
+    # На ровных стенках используем крупный шаг (заданный пользователем)
     gmsh.option.setNumber("Mesh.MeshSizeMax", target_element_size)
+    
+    # Включаем алгоритм вычисления размера элемента на основе кривизны поверхности
+    gmsh.option.setNumber("Mesh.CharacteristicLengthFromCurvature", 1)
+    # Указываем, что на 360 градусов изгиба должно приходиться как минимум 20 элементов
+    # Это заставит Gmsh плотно "облепить" тонкий край гильзы мелкими треугольниками
+    gmsh.option.setNumber("Mesh.MinimumElementsPerTwoPi", 10)
+
+    # Оптимизация формы (чтобы не было вырожденных тетраэдров)
     gmsh.option.setNumber("Mesh.Optimize", 1)
     gmsh.option.setNumber("Mesh.OptimizeNetgen", 1) 
     
@@ -85,6 +95,7 @@ def prepare_volume_mesh(stl_path, target_element_size=5.0):
     clean_elements = mapping[elements_raw]
 
     return clean_nodes, clean_elements
+
 # ==========================================
 # БЛОК 2: ПОИСК УЗЛОВ И ГОСТ
 # ==========================================
@@ -129,10 +140,7 @@ def get_internal_slave_nodes(nodes, elements, depth=150.0):
     _, slave_indices = tree.query(internal_coords)
     unique_slaves = list(set(slave_indices.tolist()))
     
-    if len(unique_slaves) > 300:
-        step = len(unique_slaves) // 300
-        unique_slaves = unique_slaves[::step]
-        
+    # Собираем ВСЕ внутренние узлы (лимит убран для CLOAD)
     return unique_slaves
 
 def get_gost_load_vector(force_mag, condition, z_top, z_bottom, cx, cy):
@@ -154,15 +162,13 @@ def get_gost_load_vector(force_mag, condition, z_top, z_bottom, cx, cy):
     return [pt_x, pt_y, z_top + 50.0], [fx, fy, fz]
 
 # ==========================================
-# БЛОК 3: ИНТЕГРАЦИЯ CALCULIX (С УМНЫМ ЛОГИРОВАНИЕМ)
+# БЛОК 3: ИНТЕГРАЦИЯ CALCULIX (CLOAD)
 # ==========================================
 def generate_inp(nodes, elements, bottom_nodes, top_nodes, force_vector, master_coords, material_type="petg_ortho", job_name="job"):
     with open(f"{job_name}.inp", "w") as f:
         f.write("*HEADING\nFGF Socket FEA\n*NODE, NSET=Nall\n")
         for i, (x, y, z) in enumerate(nodes): f.write(f"{i+1}, {x:.4f}, {y:.4f}, {z:.4f}\n")
         
-        master_id = len(nodes) + 1
-        f.write(f"{master_id}, {master_coords[0]:.4f}, {master_coords[1]:.4f}, {master_coords[2]:.4f}\n")
         f.write("*ELEMENT, TYPE=C3D4, ELSET=Eall\n")
         for i, el in enumerate(elements): f.write(f"{i+1}, {el[0]+1}, {el[1]+1}, {el[2]+1}, {el[3]+1}\n")
 
@@ -181,9 +187,21 @@ def generate_inp(nodes, elements, bottom_nodes, top_nodes, force_vector, master_
             f.write("*ELASTIC\n2100.0, 0.38\n")
             
         f.write("*SOLID SECTION, ELSET=Eall, MATERIAL=FGF_PETG\n")
-        f.write(f"*RIGID BODY, NSET=TopNodes, REF NODE={master_id}\n")
-        f.write("*STEP\n*STATIC\n*BOUNDARY\nBottomNodes, 1, 3, 0.0\n*CLOAD\n")
-        f.write(f"{master_id}, 1, {force_vector[0]:.2f}\n{master_id}, 2, {force_vector[1]:.2f}\n{master_id}, 3, {force_vector[2]:.2f}\n") 
+        
+        f.write("*STEP\n*STATIC\n*BOUNDARY\nBottomNodes, 1, 3, 0.0\n")
+        
+        # Распределяем силу по всем внутренним узлам
+        f.write("*CLOAD\n")
+        num_slaves = len(top_nodes)
+        if num_slaves > 0:
+            fx_i = force_vector[0] / num_slaves
+            fy_i = force_vector[1] / num_slaves
+            fz_i = force_vector[2] / num_slaves
+            for n in top_nodes:
+                if abs(fx_i) > 1e-5: f.write(f"{n+1}, 1, {fx_i:.5f}\n")
+                if abs(fy_i) > 1e-5: f.write(f"{n+1}, 2, {fy_i:.5f}\n")
+                if abs(fz_i) > 1e-5: f.write(f"{n+1}, 3, {fz_i:.5f}\n")
+        
         f.write("*NODE PRINT, NSET=Nall\nU\n*END STEP\n")
 
 def run_ccx(job_name="job"):
@@ -191,14 +209,12 @@ def run_ccx(job_name="job"):
     my_env["OMP_NUM_THREADS"] = "6"
     process = subprocess.run(["ccx_2.23", "-i", job_name], env=my_env, capture_output=True, text=True)
     
-    # === ВЫЛАВЛИВАЕМ РЕАЛЬНУЮ ОШИБКУ ===
     if process.returncode != 0 or not os.path.exists(f"{job_name}.dat"):
         log_output = process.stdout + "\n" + process.stderr
         if os.path.exists(f"{job_name}.out"):
             with open(f"{job_name}.out", "r") as f:
-                log_output += "\n" + f.read()[-1500:] # Захватываем конец лога
+                log_output += "\n" + f.read()[-1500:]
         
-        # Обрезаем вывод, чтобы алерт в браузере не стал бесконечным
         error_msg = f"КРИТИЧЕСКИЙ СБОЙ CalculiX (Код {process.returncode})\nПодробности лога:\n{log_output[-800:]}"
         raise RuntimeError(error_msg)
         
@@ -235,14 +251,31 @@ def process_socket_analysis(stl_path, load_newtons, condition="II", mesh_size=5.
     z_top, z_bottom = np.max(nodes[:, 2]), np.min(nodes[:, 2])
     master_coords, force_vector = get_gost_load_vector(load_newtons, condition, z_top, z_bottom, cx, cy)
 
+    cells = np.hstack((np.full((len(elements), 1), 4), elements)).astype(int).flatten()
+    celltypes = np.full(len(elements), pv.CellType.TETRA)
+    grid = pv.UnstructuredGrid(cells, celltypes, nodes)
+    
+    # Извлечение топологии (убрал PyVistaFutureWarning)
+    surf = grid.extract_surface(pass_pointid=True, algorithm='dataset_surface')
+    surf_faces = surf.faces.reshape(-1, 4)[:, 1:] 
+    
+    original_ids = surf['vtkOriginalPointIds']
+    surface_faces = original_ids[surf_faces].tolist()
+
     generate_inp(nodes, elements, bottom_nodes, top_nodes, force_vector, master_coords, material, job_name)
-    run_ccx(job_name) # Функция сама выбросит детальное исключение при ошибке
+    run_ccx(job_name) 
         
     displacements, disp_mag, max_disp = parse_dat(len(nodes), job_name)
     
     return {
-        "nodes": nodes.tolist(), "displacements": displacements, "fem_values": disp_mag, "max_stress": max_disp,
-        "bottom_nodes": nodes[bottom_nodes].tolist(), "top_nodes": nodes[top_nodes].tolist(),
-        "master_coords": master_coords, "force_vector": force_vector,
+        "nodes": nodes.tolist(), 
+        "displacements": displacements, 
+        "fem_values": disp_mag, 
+        "max_stress": max_disp,
+        "bottom_nodes": nodes[bottom_nodes].tolist(), 
+        "top_nodes": nodes[top_nodes].tolist(),
+        "master_coords": master_coords, 
+        "force_vector": force_vector,
+        "surface_faces": surface_faces,
         "stats": {"nodes_count": len(nodes), "elements_count": len(elements), "solve_time": round(time.time() - start_time, 2)}
     }

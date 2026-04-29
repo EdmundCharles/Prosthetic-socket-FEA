@@ -64,6 +64,7 @@ async def calculate_fem(
             "top_coords": result["top_nodes"],
             "master_coords": result.get("master_coords", []), 
             "force_vector": result.get("force_vector", []),
+            "surface_faces": result.get("surface_faces", []), # Добавили эту строку!
             "stats": result.get("stats", {})
         }
     except Exception as e:

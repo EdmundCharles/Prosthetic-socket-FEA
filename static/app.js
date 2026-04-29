@@ -291,37 +291,63 @@ document.getElementById('calcBtn').addEventListener('click', async () => {
             document.getElementById('statTime').textContent = data.stats.solve_time + " с";
         }
 
-        const geom = currentMesh.geometry;
-        const origPos = geom.attributes.originalPosition;
-        const colors = new Float32Array(origPos.count * 3);
-        vertexMap = new Array(origPos.count);
+        // =========================================================
+        // НОВЫЙ ВЫСОКОСКОРОСТНОЙ БИЛДЕР ГЕОМЕТРИИ (ИСТИННАЯ СЕТКА)
+        // =========================================================
+        const femGeom = new THREE.BufferGeometry();
+        const vertices = new Float32Array(data.fem_nodes.length * 3);
+        const colors = new Float32Array(data.fem_nodes.length * 3);
+        vertexMap = new Array(data.fem_nodes.length);
 
-        for (let i = 0; i < origPos.count; i++) {
-            const vx = origPos.getX(i) - geometryOffsets.x;
-            const vy = origPos.getY(i) - geometryOffsets.y;
-            const vz = origPos.getZ(i) - geometryOffsets.z;
-            
-            let minDistSq = Infinity, val = 0, dx = 0, dy = 0, dz = 0;
-            
-            for (let j = 0; j < data.fem_nodes.length; j += 5) {
-                const d2 = (vx-data.fem_nodes[j][0])**2 + (vy-data.fem_nodes[j][1])**2 + (vz-data.fem_nodes[j][2])**2;
-                if (d2 < minDistSq) { 
-                    minDistSq = d2; 
-                    val = data.fem_values[j]; 
-                    dx = data.displacements[j][0]; dy = data.displacements[j][1]; dz = data.displacements[j][2]; 
-                }
-            }
-            vertexMap[i] = {dx, dy, dz};
-            const c = new THREE.Color().setHSL((1 - Math.min(val/data.max_stress, 1))*0.66, 1, 0.5);
-            colors[i*3] = c.r; colors[i*3+1] = c.g; colors[i*3+2] = c.b;
+        // 1. Заполняем узлы и цвета (1 в 1 из решателя)
+        data.fem_nodes.forEach((node, i) => {
+            vertices[i * 3]     = node[0] + geometryOffsets.x;
+            vertices[i * 3 + 1] = node[1] + geometryOffsets.y;
+            vertices[i * 3 + 2] = node[2] + geometryOffsets.z;
+
+            vertexMap[i] = {
+                dx: data.displacements[i][0], 
+                dy: data.displacements[i][1], 
+                dz: data.displacements[i][2]
+            };
+
+            const val = data.fem_values[i];
+            const c = new THREE.Color().setHSL((1 - Math.min(val / data.max_stress, 1)) * 0.66, 1, 0.5);
+            colors[i * 3]     = c.r; 
+            colors[i * 3 + 1] = c.g; 
+            colors[i * 3 + 2] = c.b;
+        });
+
+        femGeom.setAttribute('originalPosition', new THREE.BufferAttribute(new Float32Array(vertices), 3));
+        femGeom.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+        femGeom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        // 2. Связываем узлы в треугольники
+        const indices = [];
+        if (data.surface_faces) {
+            data.surface_faces.forEach(face => {
+                indices.push(face[0], face[1], face[2]);
+            });
+        }
+        femGeom.setIndex(indices);
+        femGeom.computeVertexNormals();
+
+        // 3. ПОДМЕНЯЕМ ИЛЛЮЗИЮ НА ПРАВДУ
+        if (currentMesh) {
+            currentMesh.geometry.dispose();
+            currentMesh.geometry = femGeom;
+            currentMesh.material.vertexColors = true;
+            currentMesh.material.color.setHex(0xffffff);
+            currentMesh.material.needsUpdate = true;
+        }
+
+        if (wireframeMesh) {
+            wireframeMesh.geometry.dispose();
+            wireframeMesh.geometry = femGeom; 
         }
         
-        geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-        currentMesh.material.vertexColors = true; 
-        currentMesh.material.color.setHex(0xffffff); 
-        currentMesh.material.needsUpdate = true;
-        
         applyDeformation(parseFloat(document.getElementById('dispScale').value));
+        // =========================================================
 
         // ОЧИСТКА ПАМЯТИ ОТ СТАРЫХ ЛИНИЙ ПЕРЕД РИСОВАНИЕМ НОВЫХ
         disposeHierarchy(helpersGroup);
