@@ -6,6 +6,9 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 // ЧАСТЬ 1: БИОМЕХАНИКА И ГРАФИКИ (CHART.JS)
 // ==========================================
 
+// Хранилище для экземпляров Chart.js
+const bioCharts = { fz: null, fy: null, fx: null };
+
 // Функция для показа/скрытия доп. полей
 window.toggleJumpInput = () => {
     const isJump = document.getElementById('moveType').value === 'jump';
@@ -55,7 +58,7 @@ window.runBioAnalysis = async () => {
         document.getElementById('resTextBio').innerHTML = `<ul style="padding-left: 20px;">${recsHtml}</ul>`;
 
         // 4. Отрисовываем график (Chart.js)
-        updateChart(result.time_data, result.load_data);
+        updateChart(result.time_data, result.fz_data, result.fy_data, result.fx_data);
 
     } catch (e) {
         console.error(e);
@@ -66,32 +69,51 @@ window.runBioAnalysis = async () => {
     }
 };
 
-// Вспомогательная функция для обновления графика
-function updateChart(labels, data) {
-    const ctx = document.getElementById('loadChart').getContext('2d');
-    if (window.myChart) window.myChart.destroy();
-    
-    window.myChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels.map(l => l.toFixed(2)),
-            datasets: [{
-                label: 'Нагрузка (Н)',
-                data: data,
-                borderColor: '#1e3c72',
-                backgroundColor: 'rgba(30, 60, 114, 0.1)',
-                fill: true,
-                tension: 0.4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: { beginAtZero: true, title: { display: true, text: 'Ньютоны' } },
-                x: { title: { display: true, text: 'Время (сек)' } }
+// Функция для обновления графика
+function updateChart(timeData, fz, fy, fx) {
+    const labels = timeData.map(t => t.toFixed(2));
+
+    // Конфигурация для каждого графика
+    const chartConfigs = [
+        { id: 'chartFz', data: fz, label: 'Вертикальная нагрузка Fz (Н)', color: '#1e3c72' },
+        { id: 'chartFy', data: fy, label: 'Продольная сила Fy (Н)', color: '#2a5298' },
+        { id: 'chartFx', data: fx, label: 'Боковая сила Fx (Н)', color: '#4a90e2' }
+    ];
+
+    chartConfigs.forEach(config => {
+        const ctx = document.getElementById(config.id).getContext('2d');
+        const key = config.id.replace('chart', '').toLowerCase();
+
+        if (bioCharts[key]) bioCharts[key].destroy();
+
+        bioCharts[key] = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: config.label,
+                    data: config.data,
+                    borderColor: config.color,
+                    backgroundColor: config.color + '1A', // 10% прозрачности
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 4,          // Радиус обычных точек 
+                    pointHoverRadius: 6,     // Радиус точки при наведении курсора
+                    pointBackgroundColor: config.color, // Цвет заливки точки
+                    pointBorderColor: '#fff', // Цвет обводки точки
+                    pointBorderWidth: 1      // Толщина обводки
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'top', align: 'end' } },
+                scales: {
+                    x: { title: { display: true, text: 'Время (сек)' }, ticks: { maxTicksLimit: 10 } },
+                    y: { title: { display: true, text: 'Н' } }
+                }
             }
-        }
+        });
     });
 }
 
