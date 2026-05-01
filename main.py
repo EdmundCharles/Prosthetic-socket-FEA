@@ -29,10 +29,14 @@ async def analyze_bio(request: RequestBiomech):
     # Рассчитываем циклическую нагрузку
     duration = analyser.get_duration()
     time_data = np.linspace(0, duration, 100)
+
+    # Получаем 3D векторы
+    fx_data, fy_data, fz_data = analyser.calculate_3d_load_series(time_data)
+
     load_data = analyser.calculate_load_series(time_data)
 
     # Находим максимальную нагрузку, риск, срок службы и рекомендации
-    max_load = float(np.max(load_data))
+    max_load = float(np.max(fz_data))
     critical_load = request.socket.critical_load
     risk_percentage = min((max_load / critical_load) * 100, 100)
     service_life = analyser.calculate_service_life(max_load)
@@ -42,6 +46,9 @@ async def analyze_bio(request: RequestBiomech):
         time_data=time_data.tolist(),
         load_data=load_data.tolist(),
         critical_load=critical_load,
+        fx_data=fx_data.tolist(),
+        fy_data=fy_data.tolist(),
+        fz_data=fz_data.tolist(),
         max_load=max_load,
         risk_percentage=risk_percentage,
         service_life=service_life,
