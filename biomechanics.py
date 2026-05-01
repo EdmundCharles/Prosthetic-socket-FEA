@@ -28,7 +28,9 @@ class RequestBiomech(BaseModel):
 class ResponseBiomech(BaseModel):
     """Ответ API с результатами анализа"""
     time_data: list[float]
-    load_data: list[float]
+    fx_data: list[float] 
+    fy_data: list[float]
+    fz_data: list[float]
     critical_load: float
     max_load: float
     risk_percentage: float
@@ -77,6 +79,24 @@ class AnalyseBiomech:
             impact_time = duration / 2
             load = mass * self.g * (1 + 3 * np.exp(-50 * (time_array - impact_time)**2))
             return np.where(time_array > duration, 0, load)
+
+    def calculate_3d_load_series(self, time_array: np.ndarray):
+        """Генерирует трехмерный вектор нагрузки (Fx, Fy, Fz)"""
+        duration = self.get_duration()
+        mass = self.request.weight
+        g = self.g
+        
+        # Fz - Вертикальная сила (двугорбый график для ходьбы)
+        fz = self.calculate_load_series(time_array) 
+        
+        # Fy - Продольная сила (торможение/ускорение)
+        # В начале шага (торможение) - отрицательная, в конце (толчок) - положительная
+        fy = 0.2 * mass * g * np.sin(2 * np.pi * time_array / duration)
+        
+        # Fx - Боковая сила (небольшая осцилляция при переносе веса)
+        fx = 0.05 * mass * g * np.cos(np.pi * time_array / duration)
+        
+        return fx, fy, fz
 
     def calculate_service_life(self, max_load: float) -> float:
         """Прогноз срока службы по уравнению Баскина N = (Load / A)^(1/b)"""
