@@ -5,40 +5,29 @@ from fastapi.middleware.cors import CORSMiddleware
 import shutil, os
 import numpy as np
 
-# Твое новое промышленное МКЭ ядро
 from solver_ccx import process_socket_analysis
-
-# Логика коллеги
-from biomechanics import MovementRequest, calculate_bio_load, get_recommendations
+from biomechanics import MovementRequest, AnalyseBiomech
 
 app = FastAPI(title="Unified Prosthetic Suite")
-
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# ==========================================
-# РОУТ 1: БИОМЕХАНИКА
-# ==========================================
 @app.post("/api/analyze")
 async def analyze_bio(request: MovementRequest):
-    time_data, load_data, duration = calculate_bio_load(request)
-    max_load = float(np.max(load_data))
-    risk = (max_load / request.socket.critical_load) * 100
+    analyser = AnalyseBiomech(request)
+    duration = analyser.get_duration()
+    time_data = np.linspace(0, duration, 100)
     
-    # Упрощенный Баскин
-    cycles = 0.5 * (max_load / request.socket.fatigue_intercept) ** (1 / request.socket.fatigue_slope)
-    service_life = round(cycles / (request.steps_per_day * 365), 1)
+    fx_data, fy_data, fz_data = analyser.calculate_3d_load_series(time_data)
+    max_load = float(np.max(fz_data))
     
     return {
         "time_data": time_data.tolist(),
-        "load_data": load_data.tolist(),
-        "max_load": max_load,
-        "service_life": service_life,
-        "recommendations": get_recommendations(max_load, risk, service_life, request.movement_type, request.socket.material)
+        "fz_data": fz_data.tolist(),
+        "fy_data": fy_data.tolist(),
+        "fx_data": fx_data.tolist(),
+        "max_load": max_load
     }
 
-# ==========================================
-# РОУТ 2: МКЭ И CALCULIX
-# ==========================================
 @app.post("/api/calculate")
 async def calculate_fem(
     file: UploadFile = File(...), 
@@ -46,13 +35,12 @@ async def calculate_fem(
     condition: str = Form("II"),
     mesh_size: float = Form(5.0),
     search_depth: float = Form(150.0),
-    material: str = Form("petg_ortho") # Принимаем материал
+    material: str = Form("petg_ortho")
 ):
     temp_path = f"temp_{file.filename}"
     with open(temp_path, "wb") as buffer: 
         shutil.copyfileobj(file.file, buffer)
     try:
-        # Передаем всё в решатель
         result = process_socket_analysis(temp_path, load_newtons, condition, mesh_size, search_depth, material)
         return {
             "status": "success",
@@ -64,14 +52,12 @@ async def calculate_fem(
             "top_coords": result["top_nodes"],
             "master_coords": result.get("master_coords", []), 
             "force_vector": result.get("force_vector", []),
-            "surface_faces": result.get("surface_faces", []), # Добавили эту строку!
+            "surface_faces": result.get("surface_faces", []),
             "stats": result.get("stats", {})
         }
     except Exception as e:
         return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
     finally:
         if os.path.exists(temp_path): os.remove(temp_path)
-# ==========================================
-# СТАТИКА
-# ==========================================
+
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
