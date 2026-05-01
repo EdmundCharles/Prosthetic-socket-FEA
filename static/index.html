@@ -59,7 +59,6 @@
                         <option value="jump">Прыжок</option>
                     </select>
                 </div>
-                
                 <div id="jumpParams" class="input-group hidden">
                     <label>Высота прыжка (м)</label>
                     <input type="number" id="jumpHeight" value="0.4" step="0.1">
@@ -105,9 +104,12 @@
             </div>
         </div>   
         <div class="content-area">
-            <div id="bioView">
-                <canvas id="loadChart"></canvas>
-            </div>
+            <!-- Внутри <div class="content-area"> -->
+            <div id="bioView" style="display: flex; flex-direction: column; gap: 10px; padding: 15px; overflow-y: auto;">
+                <div style="height: 250px; width: 1100px;"><canvas id="chartFz"></canvas></div>
+                <div style="height: 180px; width: 1100px;"><canvas id="chartFy"></canvas></div>
+                <div style="height: 180px; width: 1100px;"><canvas id="chartFx"></canvas></div>
+            </div>       
             <div id="viewer3d" class="hidden"></div>
         </div>
     </div>
