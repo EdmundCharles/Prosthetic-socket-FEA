@@ -207,7 +207,9 @@ def generate_inp(nodes, elements, bottom_nodes, top_nodes, force_vector, master_
 def run_ccx(job_name="job"):
     my_env = os.environ.copy()
     my_env["OMP_NUM_THREADS"] = "6"
-    process = subprocess.run(["ccx_2.23", "-i", job_name], env=my_env, capture_output=True, text=True)
+    # Путь к исполняющему файлу CalculiX
+    ccx_path = r"c:\Calculix\bin\ccx_2.23.exe"
+    process = subprocess.run([ccx_path, "-i", job_name], env=my_env, capture_output=True, text=True)
     
     if process.returncode != 0 or not os.path.exists(f"{job_name}.dat"):
         log_output = process.stdout + "\n" + process.stderr
