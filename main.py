@@ -37,8 +37,7 @@ async def analyze_bio(request: RequestBiomech):
     max_load = float(np.max(fz_data))
     critical_load = request.socket.critical_load
     risk_percentage = min((max_load / critical_load) * 100, 100)
-    service_life = analyser.calculate_service_life(max_load)
-    recommendations = analyser.generate_recommendations(max_load, risk_percentage, service_life)
+    recommendations = analyser.generate_recommendations(risk_percentage)
     
     return ResponseBiomech(
         time_data=time_data.tolist(),
@@ -48,7 +47,6 @@ async def analyze_bio(request: RequestBiomech):
         fz_data=fz_data.tolist(),
         max_load=max_load,
         risk_percentage=risk_percentage,
-        service_life=service_life,
         recommendations=recommendations
     )
 

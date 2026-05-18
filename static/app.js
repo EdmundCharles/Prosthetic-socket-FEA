@@ -26,7 +26,6 @@ window.runBioAnalysis = async () => {
         const payload = {
             weight: parseFloat(document.getElementById('weight').value),
             height: parseFloat(document.getElementById('height').value),
-            thigh_girth: parseFloat(document.getElementById('thighGirth').value),
             steps_per_day: parseInt(document.getElementById('stepsDay').value),
             movement_type: document.getElementById('moveType').value,
             jump_height: parseFloat(document.getElementById('jumpHeight').value) || null,
@@ -49,7 +48,6 @@ window.runBioAnalysis = async () => {
         document.getElementById('bioStats').classList.remove('hidden');
         document.getElementById('statMaxLoad').textContent = Math.round(result.max_load);
         document.getElementById('statRisk').textContent = Math.round(result.risk_percentage);
-        document.getElementById('statLife').textContent = result.service_life;
 
         // 2. Обновляем поле нагрузки для МКЭ (автоматический перенос данных)
         document.getElementById('loadInput').value = Math.round(result.max_load);

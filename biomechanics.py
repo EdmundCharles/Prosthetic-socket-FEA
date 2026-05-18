@@ -18,9 +18,8 @@ class RequestBiomech(BaseModel):
     '''Данные с фронтенда при запросе'''
     weight: float = Field(..., gt=0, lt=500, description="Вес человека в кг") #... => обязательное поле, greather than 0, less than 500
     height: float = Field(175, gt=100, lt=250, description="Рост в см")
-    thigh_girth: float = Field(..., gt=20, lt=100, description="Обхват бедра в см")
     socket: SocketModel = Field(default_factory=SocketModel)
-    movement_type: Literal["walking", "running", "jump"] = Field(...) #Literal[...] - фикс.знач., причем д.б. одно из ...
+    movement_type: Literal["walking", "jump"] = Field(...) #Literal[...] - фикс.знач., причем д.б. одно из ...
     steps_per_day: int = Field(default=5000, ge=0)
     speed: Optional[float] = Field(None, gt=0, lt=15) #Optional[float] - ожидаем число, но если не придет - все ок
     jump_height: Optional[float] = Field(None, gt=0, lt=3)
@@ -34,7 +33,6 @@ class ResponseBiomech(BaseModel):
     fz_data: list[float]
     max_load: float
     risk_percentage: float
-    service_life: float
     recommendations: list[str] = []
 
 # ===== РАСЧЕТНЫЕ КЛАССЫ =====
@@ -50,15 +48,17 @@ class AnalyseBiomech:
         """Рассчитывает длительность цикла движения"""
         if self.request.movement_type == "jump":
             height = self.request.jump_height or 0.5
-            return 2 * np.sqrt(2 * height / self.g)
+            # Время полета: 2 * sqrt(2h/g)
+            flight_time = 2 * np.sqrt(2 * height / self.g)
+            # Добавляем время на подготовку и приземление (~0.3-0.5 сек)
+            prep_time = 0.35
+            return flight_time + prep_time
         
         height_m = self.request.height / 100
         stride_length = height_m * 0.43
         
-        if self.request.movement_type == "walking":
-            speed = self.request.speed or 1.4
-        else: # running
-            speed = self.request.speed or 3.0
+        #ходьба
+        speed = self.request.speed or 1.4
             
         return stride_length / speed
 
@@ -70,14 +70,33 @@ class AnalyseBiomech:
         if self.request.movement_type == "walking":
             return mass * self.g * (1.2 + 1.0 * np.abs(np.sin(2 * np.pi * time_array / duration)))
             
-        elif self.request.movement_type == "running":
-            t_mod = (time_array % duration) / duration
-            load = mass * self.g * (2.5 + 3.5 * np.exp(-8 * t_mod) * np.sin(np.pi * t_mod))
-            return np.maximum(load, mass * self.g * 1.2)
+        else:  # jump - ДВУХГОРБЫЙ ГРАФИК
+        # Параметры прыжка
+            t_takeoff = duration * 0.35  # Отталкивание (35% времени)
+            t_landing = duration * 0.65  # Приземление (65% времени)
             
-        else:  # jump
-            impact_time = duration / 2
-            load = mass * self.g * (1 + 3 * np.exp(-50 * (time_array - impact_time)**2))
+            # Ширина импульсов
+            width_takeoff = duration * 0.08
+            width_landing = duration * 0.08
+            
+            # Амплитуды (в долях веса тела)
+            # Отталкивание - активное усилие ~2.5-3x веса
+            # Приземление - ударная нагрузка ~3-5x веса (сильнее)
+            amplitude_takeoff = 2.5 * mass * self.g
+            amplitude_landing = 4.0 * mass * self.g
+            
+            # Генерируем два пика (модифицированная гауссиана)
+            takeoff_peak = amplitude_takeoff * np.exp(-((time_array - t_takeoff) ** 2) / (2 * width_takeoff ** 2))
+            landing_peak = amplitude_landing * np.exp(-((time_array - t_landing) ** 2) / (2 * width_landing ** 2))
+            
+            # Суммируем пики
+            load = takeoff_peak + landing_peak
+            
+            # Добавляем небольшой вес тела в промежутке (полетная фаза)
+            # В полете нагрузка близка к 0, но добавим вес тела в начале и конце
+            load = np.maximum(load, mass * self.g * 0.1)
+        
+            # Обнуляем после завершения цикла
             return np.where(time_array > duration, 0, load)
 
     def calculate_3d_load_series(self, time_array: np.ndarray):
@@ -85,33 +104,24 @@ class AnalyseBiomech:
         duration = self.get_duration()
         mass = self.request.weight
         g = self.g
+        movement = self.request.movement_type
         
-        # Fz - Вертикальная сила (двугорбый график для ходьбы)
-        fz = self.calculate_load_series(time_array) 
+        # Fz - Вертикальная сила (всегда)
+        fz = self.calculate_load_series(time_array)
         
-        # Fy - Продольная сила (торможение/ускорение)
-        # В начале шага (торможение) - отрицательная, в конце (толчок) - положительная
-        fy = 0.2 * mass * g * np.sin(2 * np.pi * time_array / duration)
-        
-        # Fx - Боковая сила (небольшая осцилляция при переносе веса)
-        fx = 0.05 * mass * g * np.cos(np.pi * time_array / duration)
+        if movement == "jump":
+            # Для прыжка - только вертикальная нагрузка, горизонтальные обнуляем
+            fx = np.zeros_like(time_array)
+            fy = np.zeros_like(time_array)
+        else:
+            # Для ходьбы и бега - оставляем горизонтальные силы
+            fy = 0.2 * mass * g * np.sin(2 * np.pi * time_array / duration)
+            fx = 0.05 * mass * g * np.cos(np.pi * time_array / duration)
         
         return fx, fy, fz
 
-    def calculate_service_life(self, max_load: float) -> float:
-        """Прогноз срока службы по уравнению Баскина N = (Load / A)^(1/b)"""
-        socket = self.request.socket
-        if max_load >= socket.critical_load:
-            return 0
-        try:
-            max_cycles = 0.5 * (max_load / socket.fatigue_intercept) ** (1 / socket.fatigue_slope)
-            years = max_cycles / (self.request.steps_per_day * 365)
-            return round(min(years, 20), 1)
-        except:
-            return 0
-
-    def generate_recommendations(self, max_load: float, risk: float, service_life: float) -> list[str]:
-        """Формирует список советов на основе расчетов"""
+    def generate_recommendations(self, risk: float) -> list[str]:
+        """Формирует список советов на основе риска повреждения"""
         recs = []
         material = self.request.socket.material
         movement_type = self.request.movement_type
@@ -119,29 +129,22 @@ class AnalyseBiomech:
         # Анализ статического риска
         if risk > 80 and risk < 100:
             recs.append("⚠️ ВНИМАНИЕ: Текущая нагрузка близка к критической. Избегайте резких прыжков.")
-        if risk == 100:
-            recs.append("🔴 Превышен предел прочности")
-        
-        # Анализ срока службы
-        if service_life < 1.5:
-            recs.append("🔴 Срок службы критически мал. Рекомендуется сменить материал гильзы на более прочный.")
-        elif service_life < 5:
-            recs.append("🟡 Умеренный износ. Рекомендуется плановое ТО гильзы раз в полгода.")
+        elif risk >= 100:
+            recs.append("🔴 ПРЕВЫШЕН ПРЕДЕЛ ПРОЧНОСТИ! Немедленно замените гильзу!")
         else:
             recs.append("🟢 Нагрузка в норме. Текущий режим активности безопасен для изделия.")
 
-        # Советы по материалу
-        if material == "thermoplastic" and (risk > 80 or service_life < 2):
-            recs.append("💡 СОВЕТ: Пластиковая гильза не справляется с вашей нагрузкой. Переход на карбон увеличит срок службы в 5-10 раз.")
+        # Советы по материалу (только по риску, без учета срока службы)
+        if material == "thermoplastic" and risk > 70:
+            recs.append("💡 СОВЕТ: Пластиковая гильза не справляется с вашей нагрузкой. Рекомендуется переход на карбон.")
         
-        if material == "carbon_fiber" and service_life > 15 and risk < 30:
-            recs.append("ℹ️ Запас прочности избыточен. Для этого уровня активности можно использовать более дешевый термопластик.")
+        if material == "carbon_fiber" and risk < 30:
+            recs.append("ℹ️ Запас прочности избыточен. Для снижения веса можно использовать более легкие материалы.")
 
-        # Специфические советы по типу движения
-        if movement_type == "running" and risk > 60:
-            recs.append("🏃‍♂️ При беге наблюдается высокая ударная нагрузка. Рассмотрите установку стопы с амортизатором.")
-        
-        if service_life > 10 and risk < 40:
-            recs.append("✅ У вас большой запас прочности. Можно рассмотреть облегчение гильзы для комфорта.")
+        # Советы по типу движения
+        if movement_type == "jump" and risk > 60:
+            recs.append("🏃‍♂️ Прыжки создают высокую ударную нагрузку. Рекомендуется ограничить их частоту.")
+        elif movement_type == "running" and risk > 60:
+            recs.append("🏃‍♂️ При беге нагрузка выше нормы. Рассмотрите альтернативные виды активности.")
 
         return recs
