@@ -4,138 +4,293 @@
     <meta charset="UTF-8">
     <title>Prosthetic Suite | SPbPU</title>
     <style>
-        :root { --blue: #1e3c72; --light-blue: #2a5298; }
-        body { font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; background: #f0f2f5; }
-        header { background: linear-gradient(135deg, var(--blue), var(--light-blue)); color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; }
-        .tabs { display: flex; background: #fff; border-bottom: 1px solid #ddd; }
-        .tab { padding: 15px 30px; cursor: pointer; border-bottom: 3px solid transparent; font-weight: 600; color: #666; }
-        .tab.active { border-color: var(--blue); color: var(--blue); }
-        .main-container { display: grid; grid-template-columns: 350px 1fr; flex-grow: 1; overflow: hidden; }
-        .sidebar { background: white; padding: 20px; border-right: 1px solid #ddd; overflow-y: auto; }
-        .content-area { position: relative; overflow: hidden; display: flex; flex-direction: column; }
-        #viewer3d, #bioView { flex-grow: 1; width: 100%; height: 100%; }
+        :root { 
+            --green-primary: #15803d;
+            --green-light: #22c55e;
+            --bg-color: #f9fafb;
+            --panel-bg: #ffffff;
+            --border: #e5e7eb;
+            --text-main: #111827;
+            --text-muted: #6b7280;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; background: var(--bg-color); color: var(--text-main); overflow: hidden; -webkit-font-smoothing: antialiased; }
+
+        header { background: var(--panel-bg); padding: 16px 32px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); box-shadow: var(--shadow-sm); z-index: 10; }
+        header h2 { margin: 0; font-size: 20px; font-weight: 700; color: var(--text-main); letter-spacing: -0.02em; }
+        header h2 span { color: var(--green-primary); }
+
+        .top-tools { display: flex; align-items: center; gap: 24px; background: #f3f4f6; padding: 8px 20px; border-radius: 9999px; border: 1px solid var(--border); transition: opacity 0.3s ease; }
+        .top-tools-label { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+        .main-container { display: flex; flex-grow: 1; height: calc(100vh - 70px); }
+        .sidebar { width: 340px; background: var(--panel-bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 5; box-shadow: 2px 0 8px rgba(0,0,0,0.02); }
+
+        .tabs { display: flex; padding: 12px 16px 0; gap: 8px; border-bottom: 1px solid var(--border); }
+        .tab { flex: 1; text-align: center; padding: 12px 8px; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--text-muted); border-radius: 8px 8px 0 0; transition: all 0.2s ease; margin-bottom: -1px; }
+        .tab:hover { color: var(--text-main); background: var(--bg-color); }
+        .tab.active { color: var(--green-primary); background: var(--panel-bg); border: 1px solid var(--border); border-bottom: 1px solid var(--panel-bg); border-top: 3px solid var(--green-primary); }
+
+        .settings-content { padding: 24px 20px; overflow-y: auto; flex-grow: 1; }
+        .input-group { margin-bottom: 20px; }
+        .input-group label { display: block; font-size: 13px; font-weight: 600; color: var(--text-main); margin-bottom: 8px; }
+        
+        .styled-input, .styled-select { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); font-family: inherit; font-size: 14px; box-sizing: border-box; background: var(--bg-color); transition: all 0.2s; color: var(--text-main); }
+        .styled-input:focus, .styled-select:focus { outline: none; border-color: var(--green-primary); background: #fff; box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.1); }
+        
+        .advanced-box { background: #f8fafc; border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 20px; }
+        .advanced-title { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 12px; letter-spacing: 0.05em; }
+        
+        .btn-primary { width: 100%; padding: 14px; background: var(--text-main); color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: var(--shadow-sm); }
+        .btn-primary:hover:not(:disabled) { background: #000; transform: translateY(-1px); box-shadow: var(--shadow-md); }
+        .btn-primary:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; box-shadow: none; transform: none; }
+        
+        .btn-calc { background: var(--green-primary); }
+        .btn-calc:hover:not(:disabled) { background: #166534; }
+
+        .viewport-container { flex-grow: 1; position: relative; display: flex; flex-direction: column; background: #ffffff; }
+        #viewer3d, #bioView { flex-grow: 1; width: 100%; height: 100%; position: relative; }
+        #bioView { background: var(--panel-bg); }
         .hidden { display: none !important; }
-        .btn-primary { width: 100%; padding: 12px; background: var(--blue); color: white; border: none; border-radius: 8px; cursor: pointer; margin-top: 10px; }
+
+        .overlay-panel { position: absolute; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); padding: 20px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.3); box-shadow: var(--shadow-lg); z-index: 5; }
+        #resSummary { top: 24px; left: 24px; width: 280px; }
+        #techReport { bottom: 24px; left: 24px; width: 240px; font-size: 13px; }
+        #legendOverlay { bottom: 24px; right: 24px; display: flex; flex-direction: column; align-items: center; padding: 15px; }
+
+        .progress-floating { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); width: 340px; background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(16px); padding: 16px 24px; border-radius: 20px; box-shadow: var(--shadow-lg); border: 1px solid rgba(255,255,255,0.6); z-index: 20; display: flex; flex-direction: column; gap: 12px; }
+        .progress-track { width: 100%; height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, var(--green-light), var(--green-primary)); width: 0%; transition: width 0.5s ease-out; border-radius: 3px; }
+        .progress-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; color: var(--text-main); }
+        
+        input[type=range] { -webkit-appearance: none; appearance: none; width: 120px; background: transparent; vertical-align: middle; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 16px; width: 16px; border-radius: 50%; background: var(--text-main); box-shadow: 0 2px 4px rgba(0,0,0,0.2); margin-top: -6px; cursor: grab; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; background: #cbd5e1; border-radius: 2px; }
+
+        .bio-stats-card { margin-top: 24px; padding: 16px; background: #f8fafc; border: 1px solid var(--border); border-radius: 12px; }
+        .stat-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
+        .stat-row:last-child { margin-bottom: 0; }
+        .stat-row span { color: var(--text-muted); }
+        .stat-row strong { color: var(--text-main); font-weight: 700; }
+        
+        .result-zone { margin-top: 20px; padding: 16px; background: #f8fafc; border: 1px solid var(--border); border-radius: 12px; }
+        .result-zone h4 { margin: 0 0 12px 0; font-size: 14px; color: var(--text-main); }
     </style>
     <script type="importmap">
         { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
     </script>
 </head>
 <body>
+
     <header>
-        <h2>🦿 Аналитический комплекс гильз протезов</h2>
-        <div id="topStatus">Готов к работе</div>
+        <h2>Prosthetic<span>Suite</span></h2>
+        <div class="top-tools hidden" id="visualTools">
+            <span class="top-tools-label">Визуализация 3D</span>
+            <label style="font-size: 13px; font-weight: 500;">
+                Масштаб: <span id="scaleVal" style="font-weight:700; display:inline-block; width:28px; text-align:right;">4.0</span>
+                <input type="range" id="dispScale" min="0" max="20" step="0.5" value="4.0" style="margin-left: 8px;">
+            </label>
+            <div style="width: 1px; height: 20px; background: #d1d5db; margin: 0 8px;"></div>
+            <label style="font-size: 13px; font-weight: 500; display: flex; align-items: center; cursor: pointer;">
+                <input type="checkbox" id="showGhost" checked style="margin-right: 8px; accent-color: var(--text-main);">
+                Исходная форма
+            </label>
+            <label style="font-size: 13px; font-weight: 500; display: flex; align-items: center; cursor: pointer;">
+                <input type="checkbox" id="showWireframe" style="margin-right: 8px; accent-color: var(--text-main);">
+                Сетка КЭМ
+            </label>
+            <label style="font-size: 13px; font-weight: 500; display: flex; align-items: center; cursor: pointer;">
+                <input type="checkbox" id="showKinematics" checked style="margin-right: 8px; accent-color: var(--text-main);">
+                Связи нагрузки
+            </label>
+            
+            <div id="topStatus" style="font-size: 12px; color: var(--green-primary); font-weight: 700; background: rgba(21,128,61,0.1); padding: 4px 12px; border-radius: 99px; margin-left: auto;">Готов</div>
+        </div>
     </header>
     
-    <div class="tabs">
-        <div class="tab active" onclick="switchTab('bio')">1. Биомеханика пациента</div>
-        <div class="tab" onclick="switchTab('fem')">2. МКЭ Анализ (3D)</div>
-    </div>
-
     <div class="main-container">
         <div class="sidebar">
-            <div id="bioInputs" class="sidebar-block">
-                <div class="input-group">
-                    <label>Вес (кг)</label>
-                    <input type="number" id="weight" value="80" step="1">
-                </div>
-                <div class="input-group">
-                    <label>Рост (см)</label>
-                    <input type="number" id="height" value="175" step="1">
-                </div>
-                <div class="input-group">
-                    <label>Обхват бедра (см)</label>
-                    <input type="number" id="thighGirth" value="50" step="1">
-                </div>
-                <div class="input-group">
-                    <label>Шагов в день</label>
-                    <input type="number" id="stepsDay" value="5000" step="500">
-                </div>
-                <div class="input-group">
-                    <label>Тип активности</label>
-                    <select id="moveType" onchange="toggleJumpInput()">
-                        <option value="walking">Спокойная ходьба</option>
-                        <option value="running">Бег</option>
-                        <option value="jump">Прыжок</option>
-                    </select>
-                </div>
-                <div id="jumpParams" class="input-group hidden">
-                    <label>Высота прыжка (м)</label>
-                    <input type="number" id="jumpHeight" value="0.4" step="0.1">
-                </div>
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab('bio')">Биомеханика</div>
+                <div class="tab" onclick="switchTab('fem')">МКЭ Анализ</div>
+            </div>
 
-                <button class="btn-primary" onclick="runBioAnalysis()" style="width: 100%; margin-top: 15px;">Рассчитать динамику</button>
+            <div class="settings-content">
+                <div id="bioInputs">
+                    <div class="input-group">
+                        <label>Вес пациента (кг)</label>
+                        <input type="number" id="weight" value="80" class="styled-input">
+                    </div>
+                    <div class="input-group">
+                        <label>Рост пациента (см)</label>
+                        <input type="number" id="height" value="175" class="styled-input">
+                    </div>
+                    <div class="input-group">
+                        <label>Обхват бедра (см)</label>
+                        <input type="number" id="thighGirth" value="50" class="styled-input">
+                    </div>
+                    <div class="input-group">
+                        <label>Шагов в день</label>
+                        <input type="number" id="stepsDay" value="5000" step="500" class="styled-input">
+                    </div>
+                    <div class="input-group">
+                        <label>Активность</label>
+                        <select id="moveType" class="styled-select" onchange="toggleJumpInput()">
+                            <option value="walking">Ходьба</option>
+                            <option value="running">Бег</option>
+                            <option value="jump">Прыжок</option>
+                        </select>
+                    </div>
+                    <div id="jumpParams" class="input-group hidden">
+                        <label>Высота прыжка (м)</label>
+                        <input type="number" id="jumpHeight" value="0.4" step="0.1" class="styled-input">
+                    </div>
+                    <button class="btn-primary" onclick="runBioAnalysis()">Анализ динамики</button>
+                    
+                    <div id="bioStats" class="bio-stats-card hidden">
+                        <div class="stat-row"><span>Пиковая нагрузка:</span> <strong id="statMaxLoad">-</strong> Н</div>
+                        <div class="stat-row"><span>Риск повреждения:</span> <strong id="statRisk">-</strong>%</div>
+                        <div class="stat-row"><span>Срок службы:</span> <strong id="statLife">-</strong> лет</div>
+                    </div>
+                    
+                    <div id="bioResults" class="result-zone">
+                        <h4>Рекомендации:</h4>
+                        <div id="resTextBio">Запустите биомеханический анализ...</div>
+                    </div>
+                </div>
                 
-                <div id="bioStats" class="res-card hidden" style="margin-top: 20px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
-                    <p>📈 Пиковая нагрузка: <strong id="statMaxLoad">-</strong> Н</p>
-                    <p>⚠️ Риск повреждения: <strong id="statRisk">-</strong>%</p>
-                    <p>⏳ Срок службы: <strong id="statLife">-</strong> лет</p>
+                <div id="femInputs" class="hidden">
+                    <div class="input-group"><label>STL Модель</label><input type="file" id="stlInput" accept=".stl" class="styled-input"></div>
+                    <div class="input-group"><label>Нагрузка (Н)</label><input type="number" id="loadInput" value="1200" class="styled-input"></div>
+                    <div class="input-group">
+                        <label>Условия ГОСТ</label>
+                        <select id="gostCondition" class="styled-select">
+                            <option value="I">Условие I (Пятка)</option>
+                            <option value="II" selected>Условие II (Носок)</option>
+                        </select>
+                    </div>
+                    <div class="advanced-box">
+                        <div class="advanced-title">Материал (FGF)</div>
+                        <select id="matType" class="styled-select">
+                            <option value="petg_iso">PETG (Монолит)</option>
+                            <option value="petg_ortho" selected>PETG (Ортотропный)</option>
+                        </select>
+                    </div>
+                    <div class="advanced-box">
+                        <div class="advanced-title">Геометрия Сетки</div>
+                        <div style="display:flex; gap:12px;">
+                            <div class="input-group" style="margin-bottom:0; flex:1;"><label>Шаг (мм)</label><input type="number" id="meshSize" value="5.0" class="styled-input"></div>
+                            <div class="input-group" style="margin-bottom:0; flex:1;"><label>Глубина</label><input type="number" id="searchDepth" value="150" class="styled-input"></div>
+                        </div>
+                    </div>
+                    <button class="btn-primary btn-calc" id="calcBtn" disabled>Начать МКЭ расчет</button>
+                    
+                    <div id="femResults" class="result-zone hidden">
+                        <h4>Результаты МКЭ:</h4>
+                        <div id="resTextFem">Загрузите модель для расчета напряжений...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="viewport-container">
+            <div id="progressContainer" class="progress-floating hidden">
+                <div class="progress-header">
+                    <span id="progressText">Инициализация решателя...</span>
+                    <span id="progressPercent" style="color: var(--green-primary);">0%</span>
+                </div>
+                <div class="progress-track">
+                    <div id="progressBar" class="progress-fill"></div>
+                </div>
+            </div>
+
+            <div id="resSummary" class="overlay-panel hidden">
+                <h4 style="margin:0 0 12px 0; font-size:16px; color:var(--text-main); letter-spacing:-0.02em;">Результаты</h4>
+                <div id="resText" style="font-size:14px; color:var(--text-muted); line-height:1.5;">...</div>
+            </div>
+            
+            <div id="techReport" class="overlay-panel hidden">
+                <h4 style="margin:0 0 12px 0; font-size:11px; text-transform:uppercase; color:var(--text-muted); letter-spacing:0.05em;">Статистика сетки</h4>
+                <table style="width:100%; border-collapse:collapse; color: var(--text-main);">
+                    <tr><td style="padding-bottom:6px;">Узлов:</td><td id="statNodes" style="text-align:right; font-weight:600; padding-bottom:6px;">-</td></tr>
+                    <tr><td style="padding-bottom:10px;">Элементов:</td><td id="statElems" style="text-align:right; font-weight:600; padding-bottom:10px;">-</td></tr>
+                    <tr style="border-top:1px solid var(--border);"><td style="padding-top:10px;">Время:</td><td id="statTime" style="text-align:right; font-weight:700; color:var(--green-primary); padding-top:10px;">-</td></tr>
+                </table>
+            </div>
+            
+            <div id="bioView" style="display: flex; flex-direction: column; gap: 20px; padding: 24px; overflow-y: auto; overflow-x: hidden; background: var(--panel-bg); box-sizing: border-box;">
+                <div style="position: relative; height: 250px; width: 100%; min-width: 0;">
+                    <canvas id="chartFz"></canvas>
+                </div>
+                <div style="position: relative; height: 200px; width: 100%; min-width: 0;">
+                    <canvas id="chartFy"></canvas>
+                </div>
+                <div style="position: relative; height: 200px; width: 100%; min-width: 0;">
+                    <canvas id="chartFx"></canvas>
                 </div>
             </div>
             
-            <div id="femInputs" class="hidden">
-                <h3>Параметры МКЭ</h3>
-                <input type="file" id="stlInput" accept=".stl"><br><br>
-                <label>Нагрузка (Н): <input type="number" id="loadInput" value="1200"></label><br><br>
-                <label>Смещение X (мм): <input type="number" id="offsetX" value="15" style="width: 60px;"></label><br><br>
-                <label>Смещение Y (мм): <input type="number" id="offsetY" value="-20" style="width: 60px;"></label><br><br>
-                <button class="btn-primary" id="calcBtn" disabled>Загрузите STL</button>
-                
-                <div id="progressContainer" class="hidden" style="margin-top: 15px; padding: 12px; background: #f8f9fa; border-radius: 8px; border: 1px solid #ddd;">
-                    <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; font-weight: 600; color: var(--blue);">
-                        <span id="progressText">Инициализация...</span>
-                        <span id="progressPercent">0%</span>
-                    </div>
-                    <div style="width: 100%; background: #e9ecef; border-radius: 4px; height: 8px; overflow: hidden;">
-                        <div id="progressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--light-blue), var(--blue)); transition: width 0.4s ease-out;"></div>
+            <div id="viewer3d" class="hidden">
+                <div id="legendOverlay" class="overlay-panel hidden">
+                    <div style="font-weight:700; font-size:10px; color:var(--text-muted); margin-bottom:12px; text-transform:uppercase; letter-spacing:0.05em;">Смещения (мм)</div>
+                    <div style="display:flex; align-items:stretch; height:160px;">
+                        <div style="display:flex; flex-direction:column; justify-content:space-between; margin-right:12px; font-size:12px; font-weight:600; color:var(--text-main);">
+                            <span id="legendMax">-</span><span id="legendMid">-</span><span>0.00</span>
+                        </div>
+                        <div style="width:12px; border-radius:6px; background:linear-gradient(to top, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000); box-shadow: inset 0 0 4px rgba(0,0,0,0.1);"></div>
                     </div>
                 </div>
             </div>
-            <hr>
-            <div id="resSummary">
-                <h4>Результаты:</h4>
-                <div id="bioResults" class="result-zone">
-                    <div id="resTextBio">Запустите биомеханический анализ...</div>
-                </div>
-                
-                <div id="femResults" class="result-zone hidden">
-                    <div id="resTextFem">Загрузите модель для расчета напряжений...</div>
-                </div>
-            </div>
-        </div>   
-        <div class="content-area">
-            <!-- Внутри <div class="content-area"> -->
-            <div id="bioView" style="display: flex; flex-direction: column; gap: 10px; padding: 15px; overflow-y: auto;">
-                <div style="height: 250px; width: 1100px;"><canvas id="chartFz"></canvas></div>
-                <div style="height: 180px; width: 1100px;"><canvas id="chartFy"></canvas></div>
-                <div style="height: 180px; width: 1100px;"><canvas id="chartFx"></canvas></div>
-            </div>       
-            <div id="viewer3d" class="hidden"></div>
         </div>
     </div>
-
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
-    
     <script type="module" src="app.js"></script>
-    
     <script>
-        // Логика переключения вкладок
-        function switchTab(type) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            event.target.classList.add('active');
+    
+    function switchTab(type) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        event.currentTarget.classList.add('active');
+        
+        document.getElementById('bioInputs').classList.toggle('hidden', type !== 'bio');
+        document.getElementById('femInputs').classList.toggle('hidden', type !== 'fem');
+        document.getElementById('bioView').classList.toggle('hidden', type !== 'bio');
+        document.getElementById('viewer3d').classList.toggle('hidden', type !== 'fem');
+        
+        document.getElementById('visualTools').classList.toggle('hidden', type !== 'fem');
+        
+        // Управление панелями результатов МКЭ
+        if (type === 'bio') {
+            // При переключении на биомеханику - скрываем панели МКЭ
+            const resSummary = document.getElementById('resSummary');
+            const techReport = document.getElementById('techReport');
+            const legendOverlay = document.getElementById('legendOverlay');
             
-            // Переключение инпутов
-            document.getElementById('bioInputs').classList.toggle('hidden', type !== 'bio');
-            document.getElementById('femInputs').classList.toggle('hidden', type !== 'fem');
-            
-            // Переключение вьюверов (график/3D)
-            document.getElementById('bioView').classList.toggle('hidden', type !== 'bio');
-            document.getElementById('viewer3d').classList.toggle('hidden', type !== 'fem');
-
-            // Переключение текстовых результатов
-            document.getElementById('bioResults').classList.toggle('hidden', type !== 'bio');
-            document.getElementById('femResults').classList.toggle('hidden', type !== 'fem');
+            if (resSummary) resSummary.classList.add('hidden');
+            if (techReport) techReport.classList.add('hidden');
+            if (legendOverlay) legendOverlay.classList.add('hidden');
+        } else if (type === 'fem') {
+            // При переключении на МКЭ - показываем панели, если результаты есть
+            if (window.femResultsAvailable) {
+                const resSummary = document.getElementById('resSummary');
+                const techReport = document.getElementById('techReport');
+                const legendOverlay = document.getElementById('legendOverlay');
+                
+                if (resSummary) resSummary.classList.remove('hidden');
+                if (techReport) techReport.classList.remove('hidden');
+                if (legendOverlay) legendOverlay.classList.remove('hidden');
+            }
         }
+        
+        window.dispatchEvent(new Event('resize'));
+    }
+    
+    window.toggleJumpInput = () => {
+        const isJump = document.getElementById('moveType').value === 'jump';
+        document.getElementById('jumpParams').classList.toggle('hidden', !isJump);
+    };
     </script>
 </body>
 </html>

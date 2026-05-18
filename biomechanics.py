@@ -28,10 +28,10 @@ class RequestBiomech(BaseModel):
 class ResponseBiomech(BaseModel):
     """Ответ API с результатами анализа"""
     time_data: list[float]
+    critical_load: float
     fx_data: list[float] 
     fy_data: list[float]
     fz_data: list[float]
-    critical_load: float
     max_load: float
     risk_percentage: float
     service_life: float
