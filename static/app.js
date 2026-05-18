@@ -17,6 +17,7 @@ window.toggleJumpInput = () => {
 
 window.runBioAnalysis = async () => {
     const btn = event.target;
+    const originalText = btn.textContent;
     btn.textContent = "Расчет...";
     btn.disabled = true;
 
@@ -57,27 +58,25 @@ window.runBioAnalysis = async () => {
         const recsHtml = result.recommendations.map(r => `<li>${r}</li>`).join('');
         document.getElementById('resTextBio').innerHTML = `<ul style="padding-left: 20px;">${recsHtml}</ul>`;
 
-        // 4. Отрисовываем график (Chart.js)
+        // 4. Вызываем функцию отрисовки 3-х графиков
         updateChart(result.time_data, result.fz_data, result.fy_data, result.fx_data);
 
-    } catch (e) {
-        console.error(e);
-        alert("Ошибка анализа: " + e.message);
-    } finally {
-        btn.textContent = "Рассчитать динамику";
-        btn.disabled = false;
+    } catch (e) { 
+        alert("Ошибка биомеханики: " + e.message); 
+    } finally { 
+        btn.textContent = originalText;
+        btn.disabled = false; 
     }
 };
 
-// Функция для обновления графика
+
 function updateChart(timeData, fz, fy, fx) {
     const labels = timeData.map(t => t.toFixed(2));
 
-    // Конфигурация для каждого графика
     const chartConfigs = [
-        { id: 'chartFz', data: fz, label: 'Вертикальная нагрузка Fz (Н)', color: '#1e3c72' },
-        { id: 'chartFy', data: fy, label: 'Продольная сила Fy (Н)', color: '#2a5298' },
-        { id: 'chartFx', data: fx, label: 'Боковая сила Fx (Н)', color: '#4a90e2' }
+        { id: 'chartFz', data: fz, label: 'Fz (Вертикальная нагрузка), Н', color: '#15803d', bg: 'rgba(21,128,61,0.05)' },
+        { id: 'chartFy', data: fy, label: 'Fy (Продольная сила), Н', color: '#0ea5e9', bg: 'rgba(14,165,233,0.05)' },
+        { id: 'chartFx', data: fx, label: 'Fx (Боковая сила), Н', color: '#f97316', bg: 'rgba(249,115,22,0.05)' }
     ];
 
     chartConfigs.forEach(config => {
@@ -94,23 +93,24 @@ function updateChart(timeData, fz, fy, fx) {
                     label: config.label,
                     data: config.data,
                     borderColor: config.color,
-                    backgroundColor: config.color + '1A', // 10% прозрачности
+                    backgroundColor: config.bg,
                     fill: true,
-                    tension: 0.3,
-                    pointRadius: 4,          // Радиус обычных точек 
-                    pointHoverRadius: 6,     // Радиус точки при наведении курсора
-                    pointBackgroundColor: config.color, // Цвет заливки точки
-                    pointBorderColor: '#fff', // Цвет обводки точки
-                    pointBorderWidth: 1      // Толщина обводки
+                    tension: 0.4,
+                    pointRadius: 0, // Убираем точки для чистоты линии
+                    pointHoverRadius: 6,
+                    borderWidth: 2
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { position: 'top', align: 'end' } },
+                interaction: { mode: 'index', intersect: false },
+                plugins: { 
+                    legend: { position: 'top', align: 'end', labels: { boxWidth: 12, usePointStyle: true } } 
+                },
                 scales: {
-                    x: { title: { display: true, text: 'Время (сек)' }, ticks: { maxTicksLimit: 10 } },
-                    y: { title: { display: true, text: 'Н' } }
+                    x: { grid: { color: '#f1f5f9' }, ticks: { maxTicksLimit: 10 } },
+                    y: { grid: { color: '#f1f5f9' } }
                 }
             }
         });
@@ -118,317 +118,336 @@ function updateChart(timeData, fz, fy, fx) {
 }
 
 // ==========================================
-// ЧАСТЬ 2: МКЭ И 3D (THREE.JS)
+// 2. ИНИЦИАЛИЗАЦИЯ 3D СЦЕНЫ (THREE.JS)
 // ==========================================
-
-let geometryOffsets = { x: 0, y: 0, z: 0 };
-
 const container = document.getElementById('viewer3d');
-const initWidth = container.clientWidth || window.innerWidth / 2;
-const initHeight = container.clientHeight || 600;
+const scene = new THREE.Scene(); 
+scene.background = new THREE.Color(0xffffff); 
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1e293b); 
-
-const camera = new THREE.PerspectiveCamera(45, initWidth / initHeight, 0.1, 10000);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 10000); 
 camera.position.set(300, 200, 300);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(initWidth, initHeight);
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 container.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-// Ограничим спуск камеры под пол, чтобы сетка всегда была внизу
-controls.maxPolarAngle = Math.PI / 2 + 0.1; 
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-dirLight.position.set(200, 500, 200);
+scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8); 
+dirLight.position.set(200, 500, 200); 
 scene.add(dirLight);
 
-// --- НОВОЕ: Оцифрованная размерная сетка ---
-// Создаем сетку 400x400 мм (шаг 10 мм)
-const grid = new THREE.GridHelper(400, 40, 0x666666, 0x2a3b4c);
+const grid = new THREE.GridHelper(400, 40, 0xcccccc, 0xe5e7eb);
 scene.add(grid);
 
-// Функция для создания текста, который всегда смотрит в камеру
 function createTextSprite(text) {
     const canvas = document.createElement('canvas');
     canvas.width = 128; canvas.height = 64;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = 'transparent';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.font = 'bold 20px Arial';
-    ctx.fillStyle = '#8892b0'; // Серо-голубой цвет текста
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'transparent'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.font = 'bold 20px -apple-system, sans-serif'; ctx.fillStyle = '#6b7280'; 
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
-    const sprite = new THREE.Sprite(spriteMat);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false }));
     sprite.scale.set(30, 15, 1);
     return sprite;
 }
 
-// Расставляем метки масштаба каждые 50 мм по осям
 for (let i = -200; i <= 200; i += 50) {
     if (i === 0) continue;
-    let spriteX = createTextSprite(i + ' мм');
-    spriteX.position.set(i, 0, 20); // Сдвиг от центральной оси
-    scene.add(spriteX);
-
-    let spriteZ = createTextSprite(i + ' мм');
-    spriteZ.position.set(20, 0, i);
-    scene.add(spriteZ);
+    let spriteX = createTextSprite(i + ' мм'); spriteX.position.set(i, 0, 20); scene.add(spriteX);
+    let spriteZ = createTextSprite(i + ' мм'); spriteZ.position.set(20, 0, i); scene.add(spriteZ);
 }
-// ------------------------------------------
 
-const modelGroup = new THREE.Group();
+const modelGroup = new THREE.Group(); 
 modelGroup.rotation.x = -Math.PI / 2; 
 scene.add(modelGroup);
 
+// Глобальный флаг для отслеживания наличия результатов МКЭ
+window.femResultsAvailable = false;
+
 let currentMesh = null;
+let ghostMesh = null;
+let wireframeMesh = null;
 let helpersGroup = new THREE.Group();
+let kinematicGroup = new THREE.Group(); // Группа только для связей и узлов
 modelGroup.add(helpersGroup);
 
-const resizeObserver = new ResizeObserver(() => {
-    if (container.clientWidth === 0 || container.clientHeight === 0) return;
+let vertexMap = [];
+let geometryOffsets = {x: 0, y: 0, z: 0};
+
+function disposeHierarchy(obj) {
+    if (!obj) return;
+    if (obj.children && obj.children.length > 0) {
+        for (let i = obj.children.length - 1; i >= 0; i--) {
+            const child = obj.children[i];
+            disposeHierarchy(child);
+            obj.remove(child);
+        }
+    }
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+        else obj.material.dispose();
+    }
+}
+
+const resize = () => {
+    if (container.clientWidth === 0) return;
     camera.aspect = container.clientWidth / container.clientHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(container.clientWidth, container.clientHeight);
+};
+window.addEventListener('resize', resize);
+new ResizeObserver(resize).observe(container);
+
+const applyDeformation = (scale) => {
+    if (!currentMesh || !vertexMap.length) return;
+    const pos = currentMesh.geometry.attributes.position;
+    const orig = currentMesh.geometry.attributes.originalPosition;
+    for (let i = 0; i < orig.count; i++) {
+        pos.setXYZ(
+            i, 
+            orig.getX(i) + vertexMap[i].dx * scale, 
+            orig.getY(i) + vertexMap[i].dy * scale, 
+            orig.getZ(i) + vertexMap[i].dz * scale
+        );
+    }
+    pos.needsUpdate = true;
+};
+
+document.getElementById('dispScale').addEventListener('input', (e) => {
+    const val = parseFloat(e.target.value);
+    document.getElementById('scaleVal').textContent = val.toFixed(1);
+    applyDeformation(val);
 });
-resizeObserver.observe(container);
+
+document.getElementById('showGhost').addEventListener('change', (e) => {
+    if (ghostMesh) ghostMesh.visible = e.target.checked;
+});
+
+document.getElementById('showWireframe').addEventListener('change', (e) => {
+    if (wireframeMesh) wireframeMesh.visible = e.target.checked;
+});
+
+// НОВЫЙ СЛУШАТЕЛЬ ДЛЯ КИНЕМАТИКИ
+document.getElementById('showKinematics').addEventListener('change', (e) => {
+    if (kinematicGroup) kinematicGroup.visible = e.target.checked;
+});
 
 // Загрузка STL
-document.getElementById('stlInput').addEventListener('change', function(e) {
-    const file = e.target.files[0];
+document.getElementById('stlInput').addEventListener('change', (e) => {
+    const file = e.target.files[0]; 
     if (!file) return;
 
+     // Сбрасываем флаг и скрываем старые результаты МКЭ
+    window.femResultsAvailable = false;
+    document.getElementById('resSummary')?.classList.add('hidden');
+    document.getElementById('techReport')?.classList.add('hidden');
+    document.getElementById('legendOverlay')?.classList.add('hidden');
+    
+    document.getElementById('topStatus').textContent = "Чтение файла...";
+    
     const reader = new FileReader();
-    const btn = document.getElementById('calcBtn');
-    btn.textContent = "Загрузка...";
+    reader.onload = (event) => {
+        if (currentMesh) { disposeHierarchy(currentMesh); modelGroup.remove(currentMesh); }
+        if (ghostMesh) { disposeHierarchy(ghostMesh); modelGroup.remove(ghostMesh); }
+        disposeHierarchy(helpersGroup);
+        vertexMap = [];
 
-    reader.onload = function(event) {
-        if (currentMesh) modelGroup.remove(currentMesh);
-        helpersGroup.clear();
-
-        const loader = new STLLoader();
-        const geometry = loader.parse(event.target.result);
-        
+        const geometry = new STLLoader().parse(event.target.result);
         geometry.computeBoundingBox();
         const box = geometry.boundingBox;
         
-        geometryOffsets.x = -(box.max.x + box.min.x) / 2;
-        geometryOffsets.y = -(box.max.y + box.min.y) / 2;
-        geometryOffsets.z = -box.min.z; 
-
+        geometryOffsets = { x: -(box.max.x + box.min.x)/2, y: -(box.max.y + box.min.y)/2, z: -box.min.z };
         geometry.translate(geometryOffsets.x, geometryOffsets.y, geometryOffsets.z);
         geometry.computeVertexNormals();
-
-        const material = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.5 });
-        currentMesh = new THREE.Mesh(geometry, material);
-        modelGroup.add(currentMesh);
-
-        const center = new THREE.Vector3(0, 0, (box.max.z - box.min.z) / 2);
-        controls.target.copy(center.applyMatrix4(modelGroup.matrixWorld));
+        geometry.setAttribute('originalPosition', geometry.attributes.position.clone());
         
-        btn.textContent = "Запустить Solver";
-        btn.disabled = false;
+        currentMesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.3 }));
+        
+        wireframeMesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: 0x0f172a, wireframe: true, transparent: true, opacity: 0.1, depthWrite: false }));
+        wireframeMesh.visible = document.getElementById('showWireframe').checked;
+        currentMesh.add(wireframeMesh);
+        
+        ghostMesh = new THREE.Mesh(geometry.clone(), new THREE.MeshStandardMaterial({ color: 0x94a3b8, transparent: true, opacity: 0.15, depthWrite: false }));
+        ghostMesh.visible = document.getElementById('showGhost').checked;
+        
+        modelGroup.add(currentMesh, ghostMesh);
+        controls.target.copy(new THREE.Vector3(0, 0, (box.max.z - box.min.z) / 2));
+        
+        document.getElementById('calcBtn').disabled = false;
+        document.getElementById('topStatus').textContent = "Модель загружена";
+        resize();
     };
     reader.readAsArrayBuffer(file);
 });
 
-// Запуск МКЭ расчета
+// ЗАПУСК МКЭ РАСЧЕТА
 document.getElementById('calcBtn').addEventListener('click', async () => {
-    const fileInput = document.getElementById('stlInput');
+    const fd = new FormData();
+    fd.append('file', document.getElementById('stlInput').files[0]);
+    fd.append('load_newtons', document.getElementById('loadInput').value);
+    fd.append('condition', document.getElementById('gostCondition').value);
+    fd.append('mesh_size', document.getElementById('meshSize').value);
+    fd.append('search_depth', document.getElementById('searchDepth').value);
+    fd.append('material', document.getElementById('matType').value);
+
     const btn = document.getElementById('calcBtn');
     
-    const progContainer = document.getElementById('progressContainer');
-    const progBar = document.getElementById('progressBar');
-    const progText = document.getElementById('progressText');
-    const progPercent = document.getElementById('progressPercent');
-    
-    if (!fileInput.files.length) { alert("Сначала загрузите STL модель!"); return; }
-
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-    formData.append('load_newtons', document.getElementById('loadInput').value);
-    formData.append('offset_x', document.getElementById('offsetX').value);
-    formData.append('offset_y', document.getElementById('offsetY').value);
-
-    btn.textContent = "Идет расчет...";
     btn.disabled = true;
+    document.getElementById('progressContainer').classList.remove('hidden');
+    document.getElementById('topStatus').textContent = "Выполняется МКЭ анализ...";
+
+    const startTime = Date.now();
+    const estimatedTimeMs = 45000; 
     
-    if(progContainer) {
-        progContainer.classList.remove('hidden');
-        progBar.style.width = '0%';
-        progBar.style.background = 'linear-gradient(90deg, var(--light-blue), var(--blue))';
-    }
-    
-    let progress = 0;
     const progressInterval = setInterval(() => {
-        if (progress < 95) {
-            let increment = progress < 20 ? 3 : (progress < 75 ? 1 : 0.5);
-            progress += increment;
-            if(progBar) progBar.style.width = `${progress}%`;
-            if(progPercent) progPercent.textContent = `${Math.floor(progress)}%`;
-            if(progText) {
-                if (progress < 20) progText.textContent = "Генерация 3D сетки (Gmsh)...";
-                else if (progress < 75) progText.textContent = "Сборка глобальной матрицы...";
-                else progText.textContent = "Решение СЛАУ (Ku=F)...";
-            }
-        }
+        const elapsed = Date.now() - startTime;
+        let newProgress = (elapsed / estimatedTimeMs) * 90; 
+        if (newProgress > 95) newProgress = 95; 
+        
+        document.getElementById('progressBar').style.width = `${newProgress}%`;
+        document.getElementById('progressPercent').textContent = `${Math.floor(newProgress)}%`;
+        
+        const progText = document.getElementById('progressText');
+        if (newProgress < 15) progText.textContent = "Подготовка геометрии...";
+        else if (newProgress < 30) progText.textContent = "Построение адаптивной сетки Gmsh...";
+        else if (newProgress < 50) progText.textContent = "Построение матриц жесткости...";
+        else if (newProgress < 85) progText.textContent = "Решение СЛАУ (CalculiX)...";
+        else progText.textContent = "Извлечение результатов...";
     }, 500);
 
     try {
-        const response = await fetch('/api/calculate', { method: 'POST', body: formData });
-        if (!response.ok) throw new Error(await response.text());
-        const data = await response.json();
+        const res = await fetch('/api/calculate', { method: 'POST', body: fd });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+
+        // Устанавливаем флаг, что результаты получены
+        window.femResultsAvailable = true;
         
         clearInterval(progressInterval);
-        if(progContainer) {
-            progText.textContent = "Рендеринг...";
-            progBar.style.width = '100%';
-            progPercent.textContent = '100%';
-        }
-        
-        if (data.status === "success") {
-            // Вместо того чтобы менять только текст кнопки, выводим данные в блок для результатов МКЭ
-            const femContainer = document.getElementById('resTextFem');
-            if (femContainer) {
-                femContainer.innerHTML = `
-                    <div style="background: #e8f5e9; border-left: 4px solid #28a745; padding: 10px; margin-top: 10px;">
-                        <p style="color: #28a745; font-weight: bold; margin: 0 0 5px 0;">✅ Расчет выполнен успешно</p>
-                        <p style="margin: 2px 0;">📏 Макс. смещение: <strong>${data.max_stress.toFixed(4)} мм</strong></p>
-                        <p style="margin: 2px 0;">🧊 Узлов в сетке: ${data.fem_nodes.length / 5}</p>
-                        <p style="font-size: 0.85em; color: #666; margin-top: 5px;">* Цветовая карта обновлена на модели</p>
-                    </div>
-                `;
-            }
-            // Раскраска тепловой карты
-            const geometry = currentMesh.geometry;
-            const positions = geometry.attributes.position;
-            const colors = new Float32Array(positions.count * 3);
-            
-            for (let i = 0; i < positions.count; i++) {
-                const vx = positions.getX(i) - geometryOffsets.x;
-                const vy = positions.getY(i) - geometryOffsets.y;
-                const vz = positions.getZ(i) - geometryOffsets.z;
+        document.getElementById('progressBar').style.width = '100%';
+        document.getElementById('progressPercent').textContent = '100%';
+        document.getElementById('progressText').textContent = "Визуализация...";
+        setTimeout(() => document.getElementById('progressContainer').classList.add('hidden'), 800);
 
-                let minDistSq = Infinity;
-                let val = 0;
-                for (let j = 0; j < data.fem_nodes.length; j+=5) { 
-                    const dx = vx - data.fem_nodes[j][0];
-                    const dy = vy - data.fem_nodes[j][1];
-                    const dz = vz - data.fem_nodes[j][2];
-                    const d2 = dx*dx + dy*dy + dz*dz;
-                    if (d2 < minDistSq) { minDistSq = d2; val = data.fem_values[j]; }
-                }
-                const hue = (1 - Math.min(val/data.max_stress, 1)) * 240;
-                const c = new THREE.Color(`hsl(${hue}, 100%, 50%)`);
-                colors[i*3] = c.r; colors[i*3+1] = c.g; colors[i*3+2] = c.b;
-            }
-            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        document.getElementById('topStatus').textContent = "Расчет завершен";
+        
+        document.getElementById('legendOverlay').classList.remove('hidden');
+        document.getElementById('resSummary').classList.remove('hidden');
+        document.getElementById('techReport').classList.remove('hidden');
+        
+        document.getElementById('legendMax').textContent = data.max_stress.toFixed(2);
+        document.getElementById('legendMid').textContent = (data.max_stress / 2).toFixed(2);
+
+        document.getElementById('resText').innerHTML = `
+            <div style="font-size: 15px; margin-bottom: 8px; color: var(--text-main);">Максимальное смещение:</div>
+            <div style="color: #dc2626; font-size: 24px; font-weight: 700; letter-spacing: -0.02em;">${data.max_stress.toFixed(2)} мм</div>
+        `;
+
+        if (data.stats) {
+            document.getElementById('statNodes').textContent = data.stats.nodes_count.toLocaleString();
+            document.getElementById('statElems').textContent = data.stats.elements_count.toLocaleString();
+            document.getElementById('statTime').textContent = data.stats.solve_time + " с";
+        }
+
+        const femGeom = new THREE.BufferGeometry();
+        const vertices = new Float32Array(data.fem_nodes.length * 3);
+        const colors = new Float32Array(data.fem_nodes.length * 3);
+        vertexMap = new Array(data.fem_nodes.length);
+
+        data.fem_nodes.forEach((node, i) => {
+            vertices[i * 3]     = node[0] + geometryOffsets.x;
+            vertices[i * 3 + 1] = node[1] + geometryOffsets.y;
+            vertices[i * 3 + 2] = node[2] + geometryOffsets.z;
+
+            vertexMap[i] = { dx: data.displacements[i][0], dy: data.displacements[i][1], dz: data.displacements[i][2] };
+
+            const val = data.fem_values[i];
+            const c = new THREE.Color().setHSL((1 - Math.min(val / data.max_stress, 1)) * 0.66, 1, 0.5);
+            colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+        });
+
+        femGeom.setAttribute('originalPosition', new THREE.BufferAttribute(new Float32Array(vertices), 3));
+        femGeom.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+        femGeom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const indices = [];
+        if (data.surface_faces) { data.surface_faces.forEach(face => { indices.push(face[0], face[1], face[2]); }); }
+        femGeom.setIndex(indices);
+        femGeom.computeVertexNormals();
+
+        if (currentMesh) {
+            currentMesh.geometry.dispose();
+            currentMesh.geometry = femGeom;
             currentMesh.material.vertexColors = true;
             currentMesh.material.color.setHex(0xffffff);
             currentMesh.material.needsUpdate = true;
+        }
 
-            helpersGroup.clear();
-            
-            // 1. Рисуем заделку (Красные кубики дна)
-            if (data.bottom_coords && data.bottom_coords.length > 0) {
-                const markerGeo = new THREE.BoxGeometry(2, 2, 2); 
-                const markerMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-                const markerMesh = new THREE.InstancedMesh(markerGeo, markerMat, data.bottom_coords.length);
-                const dummy = new THREE.Object3D();
-                for (let i = 0; i < data.bottom_coords.length; i++) {
-                    dummy.position.set(
-                        data.bottom_coords[i][0] + geometryOffsets.x, 
-                        data.bottom_coords[i][1] + geometryOffsets.y, 
-                        data.bottom_coords[i][2] + geometryOffsets.z
-                    );
-                    dummy.updateMatrix();
-                    markerMesh.setMatrixAt(i, dummy.matrix);
-                }
-                markerMesh.instanceMatrix.needsUpdate = true;
-                helpersGroup.add(markerMesh);
+        if (wireframeMesh) {
+            wireframeMesh.geometry.dispose();
+            wireframeMesh.geometry = femGeom; 
+        }
+        
+        applyDeformation(parseFloat(document.getElementById('dispScale').value));
+        
+        // --- ПЕРЕРАСПРЕДЕЛЕНИЕ ГРУПП ---
+        disposeHierarchy(helpersGroup);
+        helpersGroup.clear();
+        
+        kinematicGroup = new THREE.Group();
+        kinematicGroup.visible = document.getElementById('showKinematics').checked;
+        helpersGroup.add(kinematicGroup);
+
+        if (data.bottom_coords && data.bottom_coords.length > 0) {
+            const markerMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshBasicMaterial({ color: 0xdc2626 }), data.bottom_coords.length);
+            const dummy = new THREE.Object3D();
+            for (let i = 0; i < data.bottom_coords.length; i++) {
+                dummy.position.set(data.bottom_coords[i][0] + geometryOffsets.x, data.bottom_coords[i][1] + geometryOffsets.y, data.bottom_coords[i][2] + geometryOffsets.z);
+                dummy.updateMatrix(); markerMesh.setMatrixAt(i, dummy.matrix);
             }
+            markerMesh.instanceMatrix.needsUpdate = true; 
+            helpersGroup.add(markerMesh); // Заделка видна всегда
+        }
 
-            // --- НОВОЕ: 2. Выделяем Slave-узлы (Голубые сферы) ---
-            // --- НОВОЕ: 2. Выделяем Slave-узлы (Внутренний имитатор культи) ---
-            if (data.top_coords && data.top_coords.length > 0) {
-                const slaveGeo = new THREE.SphereGeometry(1.0, 8, 8); // Сферы чуть меньше
-                const slaveMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.6 }); 
-                const slaveMesh = new THREE.InstancedMesh(slaveGeo, slaveMat, data.top_coords.length);
-                const dummy = new THREE.Object3D();
-                
-                let tcx = 0, tcy = 0, tcz = 0;
-                
-                for (let i = 0; i < data.top_coords.length; i++) {
-                    // Для расчета центра Мастер-узла берем только самые верхние точки
-                    if (i < 50) { 
-                        tcx += data.top_coords[i][0]; 
-                        tcy += data.top_coords[i][1]; 
-                    }
-                    
-                    dummy.position.set(
-                        data.top_coords[i][0] + geometryOffsets.x, 
-                        data.top_coords[i][1] + geometryOffsets.y, 
-                        data.top_coords[i][2] + geometryOffsets.z
-                    );
-                    dummy.updateMatrix();
-                    slaveMesh.setMatrixAt(i, dummy.matrix);
-                }
-                slaveMesh.instanceMatrix.needsUpdate = true;
-                helpersGroup.add(slaveMesh); 
+        if (data.top_coords && data.top_coords.length > 0 && data.master_coords) {
+            const slaveMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1.0, 8, 8), new THREE.MeshBasicMaterial({ color: 0x0ea5e9, transparent: true, opacity: 0.6 }), data.top_coords.length);
+            const dummy = new THREE.Object3D();
+            for (let i = 0; i < data.top_coords.length; i++) {
+                dummy.position.set(data.top_coords[i][0] + geometryOffsets.x, data.top_coords[i][1] + geometryOffsets.y, data.top_coords[i][2] + geometryOffsets.z);
+                dummy.updateMatrix(); slaveMesh.setMatrixAt(i, dummy.matrix);
+            }
+            slaveMesh.instanceMatrix.needsUpdate = true; 
+            kinematicGroup.add(slaveMesh); // Узлы в отключаемую группу
 
-                // 3. Высчитываем Мастер-узел
-                tcx /= 50; 
-                tcy /= 50; 
-                
-                const offX = parseFloat(document.getElementById('offsetX').value) || 0;
-                const offY = parseFloat(document.getElementById('offsetY').value) || 0;
-                
-                // Находим самую высокую точку Z для Мастер-узла
-                let maxZ = -Infinity;
-                data.top_coords.forEach(p => { if(p[2] > maxZ) maxZ = p[2]; });
+            const masterPos = new THREE.Vector3(data.master_coords[0] + geometryOffsets.x, data.master_coords[1] + geometryOffsets.y, data.master_coords[2] + geometryOffsets.z);
+            const lineMat = new THREE.LineBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.15 }); 
+            
+            data.top_coords.forEach((p, idx) => {
+                if (idx % 15 !== 0) return;
+                const pLocal = new THREE.Vector3(p[0] + geometryOffsets.x, p[1] + geometryOffsets.y, p[2] + geometryOffsets.z);
+                kinematicGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([masterPos, pLocal]), lineMat)); // Паутина в отключаемую группу
+            });
 
-                const masterPos = new THREE.Vector3(
-                    tcx + offX + geometryOffsets.x,
-                    tcy + offY + geometryOffsets.y,
-                    maxZ + 50 + geometryOffsets.z 
-                );
-
-                // Полупрозрачная "паутина" RBE2 связей, уходящая вглубь
-                const lineMat = new THREE.LineBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.1 }); // Делаем прозрачнее
-                data.top_coords.forEach((p, idx) => {
-                    // Рисуем только каждую 15-ю связь, чтобы создать красивый эффект голограммы
-                    if (idx % 15 !== 0) return;
-                    const pLocal = new THREE.Vector3(p[0] + geometryOffsets.x, p[1] + geometryOffsets.y, p[2] + geometryOffsets.z);
-                    const lineGeo = new THREE.BufferGeometry().setFromPoints([masterPos, pLocal]);
-                    helpersGroup.add(new THREE.Line(lineGeo, lineMat));
-                });
-
-                // Красный вектор пресса
-                const arrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), masterPos, 60, 0xff0000, 15, 8);
-                helpersGroup.add(arrow);
+            if (data.force_vector) {
+                const dir = new THREE.Vector3(data.force_vector[0], data.force_vector[1], data.force_vector[2]).normalize(); 
+                helpersGroup.add(new THREE.ArrowHelper(dir, masterPos, 70, 0xdc2626, 15, 8)); // Красная стрелка остается в главной группе!
             }
         }
-        if(progContainer) setTimeout(() => progContainer.classList.add('hidden'), 2000);
+
     } catch (e) { 
         clearInterval(progressInterval);
-        if(progBar) progBar.style.background = 'red';
-        if(progText) progText.textContent = "Ошибка расчета!";
-        console.error(e);
-        alert("Ошибка МКЭ:\n" + e.message); 
-    } finally {
-        setTimeout(() => { if (!btn.disabled) btn.textContent = "Запустить Solver"; }, 3000);
-        btn.disabled = false;
+        document.getElementById('progressContainer').classList.add('hidden');
+        document.getElementById('topStatus').textContent = "Ошибка при расчете";
+        alert("Сбой МКЭ: " + e.message); 
+    } finally { 
+        btn.disabled = false; 
     }
 });
 
-function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
+const animate = () => { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); };
 animate();

@@ -26,4 +26,9 @@ Desktop.ini
 $RECYCLE.BIN/
 node_modules/
 dist/
-build/  
+build/
+socket_analysis.*
+*.dat
+*.frd* *.out *.inp temp_ *.stl
+socket_analysis.*  
+ 
