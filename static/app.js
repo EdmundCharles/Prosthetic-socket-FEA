@@ -22,6 +22,10 @@ window.runBioAnalysis = async () => {
     btn.disabled = true;
 
     try {
+        // Получаем выбранный материал
+        const materialSelect = document.getElementById('materialType');
+        const selectedMaterial = materialSelect ? materialSelect.value : 'carbon_fiber';
+
         // Собираем все новые данные
         const payload = {
             weight: parseFloat(document.getElementById('weight').value),
@@ -30,10 +34,15 @@ window.runBioAnalysis = async () => {
             movement_type: document.getElementById('moveType').value,
             jump_height: parseFloat(document.getElementById('jumpHeight').value) || null,
             socket: {
-                material: "carbon_fiber", // Можно добавить выбор в HTML позже
-                critical_load: 3000
+                material: selectedMaterial  // Передаем выбранный материал
+                // critical_load не передаем, он берется на сервере из библиотеки
             }
         };
+
+        const moveType = document.getElementById('moveType').value;
+        if (moveType !== 'jump') {
+            payload.steps_per_day = parseInt(document.getElementById('stepsDay').value);
+        }
 
         const res = await fetch('/api/analyze', {
             method: 'POST',
