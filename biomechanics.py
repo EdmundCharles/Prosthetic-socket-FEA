@@ -7,6 +7,7 @@ from typing import Literal, Optional, Dict
 
 GAIT_PARAMS = {
     "walking": {
+        # ===== ПАРАМЕТРЫ Fz (вертикальная сила) =====
         # Пик Z1 (первый пик, ускорение подъема)
         "z1_amplitude": 1.12,      # 112% веса тела
         "z1_phase": 0.135,         # 13.5% цикла шага
@@ -34,6 +35,24 @@ GAIT_PARAMS = {
         "plateau_phase": 0.05,           # 5% цикла
         "plateau_width": 0.02,           # Ширина
         "plateau_power": 4,              # Более плоское плато
+        
+        # ===== ПАРАМЕТРЫ Fy (продольная сила) =====
+        "fy_braking_amplitude": -0.17,   # Пик торможения (% веса) - отрицательный
+        "fy_braking_phase": 0.10,        # Фаза пика торможения (10% цикла)
+        "fy_braking_width": 0.03,        # Ширина пика торможения
+        
+        "fy_propulsion_amplitude": 0.20, # Пик ускорения (% веса) - положительный
+        "fy_propulsion_phase": 0.48,     # Фаза пика ускорения (48% цикла)
+        "fy_propulsion_width": 0.04,     # Ширина пика ускорения
+        
+        # ===== ПАРАМЕТРЫ Fx (боковая сила) =====
+        "fx_first_amplitude": 0.05,      # Первый пик (положительный, на наблюдателя)
+        "fx_first_phase": 0.12,          # Фаза первого пика (12% цикла)
+        "fx_first_width": 0.04,          # Ширина первого пика
+        
+        "fx_second_amplitude": -0.05,    # Второй пик (отрицательный, от наблюдателя)
+        "fx_second_phase": 0.45,         # Фаза второго пика (45% цикла)
+        "fx_second_width": 0.04,         # Ширина второго пика
     },
     
     "jump": {
@@ -60,6 +79,8 @@ ALTERNATIVE_GAITS = {
         "z3_amplitude": 1.15,
         "z3_phase": 0.44,
         "z2_base": 0.70,
+        "fy_braking_amplitude": -0.20,
+        "fy_propulsion_amplitude": 0.23,
     },
     "slow": {
         "z1_amplitude": 1.05,
@@ -67,6 +88,8 @@ ALTERNATIVE_GAITS = {
         "z3_amplitude": 1.08,
         "z3_phase": 0.48,
         "z2_base": 0.85,
+        "fy_braking_amplitude": -0.14,
+        "fy_propulsion_amplitude": 0.16,
     },
     "elderly": {
         "z1_amplitude": 1.02,
@@ -75,8 +98,13 @@ ALTERNATIVE_GAITS = {
         "z3_phase": 0.49,
         "z2_base": 0.82,
         "heel_strike_amplitude": 0.05,
+        "fy_braking_amplitude": -0.12,
+        "fy_propulsion_amplitude": 0.14,
+        "fx_first_amplitude": 0.03,
+        "fx_second_amplitude": -0.03,
     }
 }
+
 
 MATERIALS_LIBRARY = {
     "carbon_fiber_high": {
@@ -282,18 +310,37 @@ class AnalyseBiomech:
             fy = np.zeros_like(time_array)
             fx = np.zeros_like(time_array)
         else:  # walking
-            # 1. ПРОДОЛЬНАЯ СИЛА (Fy)
-            # Используем синусоиду для имитации перехода от торможения к ускорению
-            # Амплитуда ~0.2 * Вес тела (20% от веса)
-            fy = 0.2 * weight * np.sin(2 * np.pi * t)
+            p = self.params["walking"]  # Берем параметры из словаря
             
-            # 2. ПОПЕРЕЧНАЯ СИЛА (Fx)
-            # Аппроксимация кривой с двумя максимумами
-            # Первый пик (X1, отведение) на 12% цикла
-            # Второй пик (X2, приведение) на 45% цикла
-            x1_amp = -0.05 * weight * np.exp(-((t - 0.12) ** 2) / (2 * 0.04 ** 2))
-            x2_amp = 0.05 * weight * np.exp(-((t - 0.45) ** 2) / (2 * 0.04 ** 2))
-            fx = x1_amp + x2_amp
+            # ==================================================
+            # 1. ПРОДОЛЬНАЯ СИЛА (Fy) - Торможение и ускорение
+            # ==================================================
+            # Пик торможения (отрицательный, в начале цикла)
+            braking_peak = p["fy_braking_amplitude"] * weight * self._gaussian_peak(
+                t, 1.0, p["fy_braking_phase"], p["fy_braking_width"], 2
+            )
+            
+            # Пик ускорения (положительный, во второй половине цикла)
+            propulsion_peak = p["fy_propulsion_amplitude"] * weight * self._gaussian_peak(
+                t, 1.0, p["fy_propulsion_phase"], p["fy_propulsion_width"], 2
+            )
+            
+            fy = braking_peak + propulsion_peak
+            
+            # ==================================================
+            # 2. ПОПЕРЕЧНАЯ СИЛА (Fx) - Боковая стабилизация
+            # ==================================================
+            # Первый пик (положительный, на наблюдателя)
+            first_peak = p["fx_first_amplitude"] * weight * self._gaussian_peak(
+                t, 1.0, p["fx_first_phase"], p["fx_first_width"], 2
+            )
+            
+            # Второй пик (отрицательный, от наблюдателя)
+            second_peak = p["fx_second_amplitude"] * weight * self._gaussian_peak(
+                t, 1.0, p["fx_second_phase"], p["fx_second_width"], 2
+            )
+            
+            fx = first_peak + second_peak
             
         return fx, fy, fz
     

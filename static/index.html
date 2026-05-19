@@ -229,14 +229,22 @@
             </div>
             
             <div id="bioView" style="display: flex; flex-direction: column; gap: 20px; padding: 24px; overflow-y: auto; overflow-x: hidden; background: var(--panel-bg); box-sizing: border-box;">
-                <div style="position: relative; height: 250px; width: 100%; min-width: 0;">
-                    <canvas id="chartFz"></canvas>
+                <div id="bioPlaceholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 500px; background: #f8fafc; border-radius: 12px; border: 1px dashed var(--border);">
+                    <div style="font-size: 48px; margin-bottom: 16px;">🦿</div>
+                    <div style="font-size: 18px; font-weight: 600; color: var(--text-main); margin-bottom: 8px;">Готов к работе</div>
+                    <div style="font-size: 14px; color: var(--text-muted);">Заполните параметры и запустите анализ динамики</div>
                 </div>
-                <div style="position: relative; height: 200px; width: 100%; min-width: 0;">
-                    <canvas id="chartFy"></canvas>
-                </div>
-                <div style="position: relative; height: 200px; width: 100%; min-width: 0;">
-                    <canvas id="chartFx"></canvas>
+                
+                <div id="chartsContainer" style="display: none;">
+                    <div style="position: relative; height: 250px; width: 100%; min-width: 0;">
+                        <canvas id="chartFz"></canvas>
+                    </div>
+                    <div style="position: relative; height: 200px; width: 100%; min-width: 0;">
+                        <canvas id="chartFy"></canvas>
+                    </div>
+                    <div style="position: relative; height: 200px; width: 100%; min-width: 0;">
+                        <canvas id="chartFx"></canvas>
+                    </div>
                 </div>
             </div>
             

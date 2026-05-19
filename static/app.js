@@ -9,6 +9,19 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 // Хранилище для экземпляров Chart.js
 const bioCharts = { fz: null, fy: null, fx: null };
 
+// Функция для переключения между плейсхолдером и графиками
+function toggleBioVisualization(showCharts) {
+    const placeholder = document.getElementById('bioPlaceholder');
+    const chartsContainer = document.getElementById('chartsContainer');
+    
+    if (placeholder) {
+        placeholder.style.display = showCharts ? 'none' : 'flex';
+    }
+    if (chartsContainer) {
+        chartsContainer.style.display = showCharts ? 'block' : 'none';
+    }
+}
+
 // Функция для показа/скрытия доп. полей
 window.toggleJumpInput = () => {
     const isJump = document.getElementById('moveType').value === 'jump';
@@ -20,6 +33,9 @@ window.runBioAnalysis = async () => {
     const originalText = btn.textContent;
     btn.textContent = "Расчет...";
     btn.disabled = true;
+
+    // Переключаем на графики
+    toggleBioVisualization(true);
 
     try {
         // Получаем выбранный материал
@@ -70,6 +86,8 @@ window.runBioAnalysis = async () => {
 
     } catch (e) { 
         alert("Ошибка биомеханики: " + e.message); 
+        // При ошибке показываем плейсхолдер обратно
+        toggleBioVisualization(false);
     } finally { 
         btn.textContent = originalText;
         btn.disabled = false; 
