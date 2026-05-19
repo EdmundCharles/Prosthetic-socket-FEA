@@ -15,40 +15,26 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 async def analyze_bio(request: RequestBiomech):
     """
     Анализ нагрузки на гильзу протеза при движении.
-    
-    Принимает параметры движения и возвращает:
-    - Временной ряд нагрузки
-    - Максимальную нагрузку
-    - Риск повреждения в %
-    - Срок службы
-    - Рекомендации по эксплуатации и материалу
     """
-    #Экземпляр анализатора
     analyser = AnalyseBiomech(request)
     
-    # Рассчитываем циклическую нагрузку
     duration = analyser.get_duration()
     time_data = np.linspace(0, duration, 100)
 
-    # Получаем 3D векторы
     fx_data, fy_data, fz_data = analyser.calculate_3d_load_series(time_data)
 
-    # Находим максимальную нагрузку, риск, срок службы и рекомендации
     max_load = float(np.max(fz_data))
-    critical_load = request.socket.critical_load
-    risk_percentage = min((max_load / critical_load) * 100, 100)
-    service_life = analyser.calculate_service_life(max_load)
-    recommendations = analyser.generate_recommendations(max_load, risk_percentage, service_life)
-    
+    critical_load = analyser.get_critical_load()
+    risk_percentage = min((max_load / critical_load) * 100.0, 100.0)
+    recommendations = analyser.generate_recommendations(risk_percentage)
+
     return ResponseBiomech(
         time_data=time_data.tolist(),
-        critical_load=critical_load,
         fx_data=fx_data.tolist(),
         fy_data=fy_data.tolist(),
         fz_data=fz_data.tolist(),
         max_load=max_load,
         risk_percentage=risk_percentage,
-        service_life=service_life,
         recommendations=recommendations
     )
 
