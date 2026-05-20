@@ -136,16 +136,28 @@ def generate_inp(nodes, elements, bottom_nodes, top_nodes, force_vector, master_
         f.write("*SOLID SECTION, ELSET=Eall, MATERIAL=FGF_PETG\n")
         f.write("*STEP\n*STATIC\n*BOUNDARY\nBottomNodes, 1, 3, 0.0\n")
         
+        # --- АНАЛИТИЧЕСКИЙ RBE3 ---
+        # Распределяем силу и момент программно, так как CalculiX падает из-за лимита на размер MPC (12000 узлов)
+        slave_coords = np.array([nodes[n] for n in top_nodes])
+        rc = np.mean(slave_coords, axis=0)
+        r_master = np.array(master_coords) - rc
+        Mc = np.cross(r_master, force_vector)
+        
+        r = slave_coords - rc
+        I = np.zeros((3, 3))
+        for ri in r:
+            I += np.eye(3) * np.dot(ri, ri) - np.outer(ri, ri)
+            
+        alpha = np.linalg.solve(I, Mc)
+        
         f.write("*CLOAD\n")
-        num_slaves = len(top_nodes)
-        if num_slaves > 0:
-            fx_i = force_vector[0] / num_slaves
-            fy_i = force_vector[1] / num_slaves
-            fz_i = force_vector[2] / num_slaves
-            for n in top_nodes:
-                if abs(fx_i) > 1e-5: f.write(f"{n+1}, 1, {fx_i:.5f}\n")
-                if abs(fy_i) > 1e-5: f.write(f"{n+1}, 2, {fy_i:.5f}\n")
-                if abs(fz_i) > 1e-5: f.write(f"{n+1}, 3, {fz_i:.5f}\n")
+        N_slaves = len(top_nodes)
+        for i, n_idx in enumerate(top_nodes):
+            F_i = np.array(force_vector) / N_slaves + np.cross(alpha, r[i])
+            if abs(F_i[0]) > 1e-5: f.write(f"{n_idx+1}, 1, {F_i[0]:.5f}\n")
+            if abs(F_i[1]) > 1e-5: f.write(f"{n_idx+1}, 2, {F_i[1]:.5f}\n")
+            if abs(F_i[2]) > 1e-5: f.write(f"{n_idx+1}, 3, {F_i[2]:.5f}\n")
+        
         
         # Запрашиваем U (перемещения) и S (напряжения, усредненные по узлам)
         f.write("*NODE PRINT, NSET=Nall\nU\n")
@@ -155,7 +167,7 @@ def generate_inp(nodes, elements, bottom_nodes, top_nodes, force_vector, master_
 def run_ccx(job_name="job"):
     my_env = os.environ.copy()
     my_env["OMP_NUM_THREADS"] = "6"
-    ccx_path = r"c:\Calculix\bin\ccx_2.23.exe"
+    ccx_path = "/opt/homebrew/bin/ccx_2.23"
     process = subprocess.run([ccx_path, "-i", job_name], env=my_env, capture_output=True, text=True)
     if process.returncode != 0 or not os.path.exists(f"{job_name}.dat"):
         raise RuntimeError("КРИТИЧЕСКИЙ СБОЙ CalculiX")
@@ -164,7 +176,7 @@ def run_ccx(job_name="job"):
 # ==========================================
 # ОБНОВЛЕНИЕ: ПАРСИНГ ТЕНЗОРОВ
 # ==========================================
-def parse_dat(num_nodes, job_name="job"):
+def parse_dat(num_nodes, elements, job_name="job"):
     displacements = np.zeros((num_nodes, 3))
     stresses = np.zeros((num_nodes, 6))
     node_stress_count = np.zeros(num_nodes)
@@ -182,20 +194,21 @@ def parse_dat(num_nodes, job_name="job"):
                 displacements[int(parts[0])-1] = [float(parts[1]), float(parts[2]), float(parts[3])]
                 
     # 2. Напряжения
-    start_idx_stress = next((i for i, line in enumerate(lines) if "stresses (averaged at the nodes)" in line), -1)
+    start_idx_stress = next((i for i, line in enumerate(lines) if "stresses (elem, integ.pnt.,sxx,syy,szz,sxy,sxz,syz)" in line), -1)
     if start_idx_stress != -1:
         start_idx_stress += 3
         for line in lines[start_idx_stress:]:
             if not line.strip(): break
             parts = line.split()
             if len(parts) >= 8: 
-                node_idx = int(parts[1]) - 1
-                if node_idx < num_nodes:
-                    stresses[node_idx] += [
-                        float(parts[2]), float(parts[3]), float(parts[4]), 
-                        float(parts[5]), float(parts[7]), float(parts[6]) # Перевод в Voigt
-                    ]
-                    node_stress_count[node_idx] += 1
+                elem_idx = int(parts[0]) - 1
+                if elem_idx < len(elements):
+                    elem_nodes = elements[elem_idx]
+                    sxx, syy, szz = float(parts[2]), float(parts[3]), float(parts[4])
+                    sxy, sxz, syz = float(parts[5]), float(parts[6]), float(parts[7])
+                    for node_idx in elem_nodes:
+                        stresses[node_idx] += [sxx, syy, szz, sxy, syz, sxz]
+                        node_stress_count[node_idx] += 1
 
     valid_nodes = node_stress_count > 0
     stresses[valid_nodes] = stresses[valid_nodes] / node_stress_count[valid_nodes][:, None]
@@ -206,6 +219,7 @@ def parse_dat(num_nodes, job_name="job"):
     vm_squared = 0.5 * ((Sxx - Syy)**2 + (Syy - Szz)**2 + (Szz - Sxx)**2 + 6 * (Sxy**2 + Syz**2 + Sxz**2))
     von_mises = np.sqrt(np.maximum(vm_squared, 0.0))
     
+    # Возвращаем стандартный Мизес, так как гильза полностью сжата по оси Z из-за веса человека.
     critical_node_idx = int(np.argmax(von_mises))
     
     return {
@@ -241,9 +255,7 @@ def process_socket_analysis(stl_path, load_newtons, condition="II", mesh_size=5.
 
     generate_inp(nodes, elements, bottom_nodes, top_nodes, force_vector, master_coords, material, job_name)
     run_ccx(job_name) 
-        
-    parsed_data = parse_dat(len(nodes), job_name)
-    
+    parsed_data = parse_dat(len(nodes), elements, job_name)
     return {
         "nodes": nodes.tolist(), 
         "displacements": parsed_data["displacements"], 

@@ -89,6 +89,14 @@
         <h2>Prosthetic<span>Suite</span></h2>
         <div class="top-tools hidden" id="visualTools">
             <span class="top-tools-label">Визуализация 3D</span>
+            <label style="font-size: 13px; font-weight: 500; display: flex; align-items: center; cursor: pointer;">
+                Heatmap:
+                <select id="heatmapType" style="margin-left: 8px; font-size: 13px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border);">
+                    <option value="stresses" selected>Напряжения (МПа)</option>
+                    <option value="displacements">Перемещения (мм)</option>
+                </select>
+            </label>
+            <div style="width: 1px; height: 20px; background: #d1d5db; margin: 0 8px;"></div>
             <label style="font-size: 13px; font-weight: 500;">
                 Масштаб: <span id="scaleVal" style="font-weight:700; display:inline-block; width:28px; text-align:right;">4.0</span>
                 <input type="range" id="dispScale" min="0" max="20" step="0.5" value="4.0" style="margin-left: 8px;">

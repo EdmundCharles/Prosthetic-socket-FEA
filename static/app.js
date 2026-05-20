@@ -160,6 +160,52 @@ document.getElementById('showGhost').addEventListener('change', (e) => { if (gho
 document.getElementById('showWireframe').addEventListener('change', (e) => { if (wireframeMesh) wireframeMesh.visible = e.target.checked; });
 document.getElementById('showKinematics').addEventListener('change', (e) => { if (kinematicGroup) kinematicGroup.visible = e.target.checked; });
 
+window.lastFemData = null;
+
+window.updateHeatmap = function() {
+    if (!window.lastFemData || !currentMesh) return;
+    
+    const data = window.lastFemData;
+    const type = document.getElementById('heatmapType').value;
+    const colors = new Float32Array(data.fem_nodes.length * 3);
+    
+    let maxVal = 1.0;
+    let values = [];
+    
+    if (type === 'displacements') {
+        values = data.displacements.map(d => Math.sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]));
+        maxVal = Math.max(...values);
+        document.querySelector('#legendOverlay div').textContent = "ПЕРЕМЕЩЕНИЯ (мм)";
+    } else {
+        values = data.fem_values;
+        // Отсекаем сингулярности (экстремально высокие напряжения в 1-2 узлах), 
+        // из-за которых вся остальная гильза кажется "безопасной" (синей).
+        // Берем 99-й перцентиль напряжений как основу для цветовой шкалы.
+        const sorted = new Float32Array(values).sort();
+        const p99 = sorted[Math.floor(sorted.length * 0.99)];
+        maxVal = Math.min(data.max_stress, p99 * 1.2); 
+        if (maxVal < 0.1) maxVal = data.max_stress; // Защита от нулевого распределения
+        
+        document.querySelector('#legendOverlay div').textContent = "НАПРЯЖЕНИЯ (МПа)";
+    }
+    
+    if (maxVal === 0) maxVal = 1e-6;
+    
+    for (let i = 0; i < data.fem_nodes.length; i++) {
+        const val = values[i];
+        const c = new THREE.Color().setHSL((1 - Math.min(val / maxVal, 1)) * 0.66, 1, 0.5);
+        colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+    }
+    
+    currentMesh.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    currentMesh.geometry.attributes.color.needsUpdate = true;
+    
+    document.getElementById('legendMax').textContent = maxVal.toFixed(2);
+    document.getElementById('legendMid').textContent = (maxVal / 2).toFixed(2);
+};
+
+document.getElementById('heatmapType').addEventListener('change', window.updateHeatmap);
+
 document.getElementById('stlInput').addEventListener('change', (e) => {
     const file = e.target.files[0]; if (!file) return;
     window.femResultsAvailable = false;
@@ -239,7 +285,8 @@ document.getElementById('calcBtn').addEventListener('click', async () => {
         const res = await fetch('/api/calculate', { method: 'POST', body: fd });
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
-
+        
+        window.lastFemData = data;
         window.femResultsAvailable = true;
         clearInterval(progressInterval);
 
@@ -252,9 +299,6 @@ document.getElementById('calcBtn').addEventListener('click', async () => {
         document.getElementById('legendOverlay').classList.remove('hidden');
         document.getElementById('resSummary').classList.remove('hidden');
         document.getElementById('techReport').classList.remove('hidden');
-        
-        document.getElementById('legendMax').textContent = data.max_stress.toFixed(2);
-        document.getElementById('legendMid').textContent = (data.max_stress / 2).toFixed(2);
 
         // ОБНОВЛЕНИЕ: ВЫВОД РЕЗУЛЬТАТОВ (МПА и ЛЕТ)
         const lifeYears = data.fatigue_results.estimated_life_years;
@@ -288,9 +332,8 @@ document.getElementById('calcBtn').addEventListener('click', async () => {
             vertices[i * 3 + 2] = node[2] + geometryOffsets.z;
             vertexMap[i] = { dx: data.displacements[i][0], dy: data.displacements[i][1], dz: data.displacements[i][2] };
             
-            const val = data.fem_values[i];
-            const c = new THREE.Color().setHSL((1 - Math.min(val / data.max_stress, 1)) * 0.66, 1, 0.5);
-            colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+            // Заглушка белого цвета, реальный цвет применится в updateHeatmap
+            colors[i * 3] = 1; colors[i * 3 + 1] = 1; colors[i * 3 + 2] = 1;
         });
 
         femGeom.setAttribute('originalPosition', new THREE.BufferAttribute(new Float32Array(vertices), 3));
@@ -315,7 +358,9 @@ document.getElementById('calcBtn').addEventListener('click', async () => {
             wireframeMesh.geometry = femGeom; 
         }
         
+        window.updateHeatmap();
         applyDeformation(parseFloat(document.getElementById('dispScale').value));
+
         
         disposeHierarchy(helpersGroup);
         helpersGroup.clear();

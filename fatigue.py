@@ -76,8 +76,8 @@ def count_rainflow_cycles(stress_1d):
       (0.5 - это полуцикл, 1.0 - полный цикл).
     """
     # Экстракция экстремумов (пиков и впадин) - rainflow работает именно с ними
-    # Библиотека rainflow.extract возвращает кортеж: (размах, среднее, кол-во_циклов, start_idx, end_idx)
-    cycles_raw = rainflow.extract(stress_1d)
+    # Библиотека rainflow.extract_cycles возвращает генератор кортежей: (размах, среднее, кол-во_циклов, start_idx, end_idx)
+    cycles_raw = rainflow.extract_cycles(stress_1d)
     
     cycles = []
     for rng, mean, count, i_start, i_end in cycles_raw:
