@@ -7,7 +7,8 @@ import numpy as np
 
 from solver_ccx import process_socket_analysis
 from biomechanics import RequestBiomech, AnalyseBiomech, ResponseBiomech, SocketModel, MATERIALS_LIBRARY
-from fatigue import analyze_node_fatigue 
+# ИМПОРТ ОБНОВЛЕННОЙ ФУНКЦИИ FDM
+from fatigue import analyze_fdm_node_fatigue 
 
 app = FastAPI(title="Unified Prosthetic Suite")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -38,7 +39,6 @@ async def calculate_fem(
     mesh_size: float = Form(5.0),
     search_depth: float = Form(150.0),
     material: str = Form("petg_ortho"),
-    # === НОВЫЕ ПАРАМЕТРЫ ДЛЯ УСТАЛОСТИ ===
     bio_material: str = Form("carbon_fiber"),
     weight: float = Form(80.0),
     height: float = Form(175.0),
@@ -51,7 +51,7 @@ async def calculate_fem(
         shutil.copyfileobj(file.file, buffer)
         
     try:
-        # 1. Решаем статику в МКЭ
+        # 1. Решаем статику в МКЭ (теперь solver_ccx.py не делает усталость)
         result = process_socket_analysis(temp_path, load_newtons, condition, mesh_size, search_depth, material)
         
         # 2. Генерируем динамическую нагрузку шага
@@ -68,22 +68,25 @@ async def calculate_fem(
         base_tensor = np.array(result["critical_stress_voigt"]) 
         stress_history_voigt = np.outer(scaling_factors, base_tensor)
         
-        # 4. Расчет усталости
+        # 4. Расчет усталости для FDM
         mat_props = MATERIALS_LIBRARY.get(bio_material, MATERIALS_LIBRARY["carbon_fiber"])
-        material_params = {
-            "type": mat_props.get("type", "carbon"),
-            "uts": mat_props.get("uts", 600.0),
-            "fatigue_intercept": mat_props.get("fatigue_intercept", 850.0),
-            "fatigue_slope": mat_props.get("fatigue_slope", -0.1)
-        }
+        # Берем оси по отдельности
+        mat_ip = mat_props.get("ip", {"uts": 600.0, "fatigue_intercept": 850.0, "fatigue_slope": -0.1})
+        mat_z  = mat_props.get("z", {"uts": 450.0, "fatigue_intercept": 600.0, "fatigue_slope": -0.12})
         
-        damage_per_step = analyze_node_fatigue(stress_history_voigt, material_params)
+        fatigue_res = analyze_fdm_node_fatigue(stress_history_voigt, mat_ip, mat_z)
+        damage_per_step = fatigue_res["total_damage"]
         
-        if damage_per_step > 0:
+        if damage_per_step > 0 and damage_per_step < 1.0:
             life_days = 1.0 / (damage_per_step * stepsDay)
             life_years = round(life_days / 365.0, 2)
+        elif damage_per_step >= 1.0:
+            life_years = 0.0 # Разрушение сразу
         else:
-            life_years = 50.0 
+            life_years = 50.0 # Бесконечный ресурс
+            
+        # Добавляем в результат прогнозные годы
+        fatigue_res["estimated_life_years"] = life_years
             
         return {
             "status": "success",
@@ -97,7 +100,7 @@ async def calculate_fem(
             "force_vector": result.get("force_vector", []),
             "surface_faces": result.get("surface_faces", []),
             "stats": result.get("stats", {}),
-            "fatigue_results": { "estimated_life_years": life_years } # <--- Возвращаем на фронт
+            "fatigue_results": fatigue_res # Отдаем объект полностью на фронт
         }
     except Exception as e:
         return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
