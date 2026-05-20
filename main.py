@@ -24,8 +24,7 @@ async def analyze_bio(request: RequestBiomech):
     fx_data, fy_data, fz_data = analyser.calculate_3d_load_series(time_data)
 
     max_load = float(np.max(fz_data))
-    critical_load = analyser.get_critical_load()
-    risk_percentage = min((max_load / critical_load) * 100.0, 100.0)
+    risk_percentage = analyser.get_risk_percentage(max_load)
     recommendations = analyser.generate_recommendations(risk_percentage)
 
     return ResponseBiomech(

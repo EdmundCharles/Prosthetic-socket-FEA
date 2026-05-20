@@ -151,18 +151,15 @@ MATERIALS_LIBRARY = {
 
 # ===== PYDANTIC МОДЕЛИ =====
 
-class SocketModel(BaseModel):
-    '''Параметры гильзы протеза'''
-    material: str = Field(default="carbon_fiber", description="Материал гильзы")
-
 class RequestBiomech(BaseModel):
     '''Данные с фронтенда при запросе'''
     weight: float = Field(..., gt=0, lt=500, description="Вес человека в кг")
-    height: float = Field(175, gt=100, lt=250, description="Рост в см")
-    socket: SocketModel = Field(default_factory=SocketModel)
-    movement_type: Literal["walking", "jump"] = Field(...)
+    height: float = Field(..., gt=100, lt=250, description="Рост в см")
+    kultya_girth: float = Field(..., gt=0, lt=100, description="Обхват культи в см")
     steps_per_day: int = Field(default=5000, ge=0)
+    movement_type: Literal["walking", "jump"] = Field(...)
     jump_height: Optional[float] = Field(None, gt=0, lt=3)
+    tensile_strength: float = Field(..., gt=0, lt=8000, description="Предел прочности материала в МПа")
 
 class ResponseBiomech(BaseModel):
     """Ответ API с результатами анализа"""
@@ -184,12 +181,9 @@ class AnalyseBiomech:
         self.g = 9.81
         self.gait_profile = gait_profile
         
-        # Получаем critical_load из библиотеки материалов
-        material_key = request.socket.material
-        if material_key in MATERIALS_LIBRARY:
-            self.critical_load = MATERIALS_LIBRARY[material_key]["critical_load"]
-        else:
-            self.critical_load = 3000  # Значение по умолчанию
+        self.tensile_strength = request.tensile_strength * 10**6 #Па
+        self.kultya_girth = request.kultya_girth * 10**(-2) #М
+
         
         # Выбираем параметры графика
         if gait_profile in ALTERNATIVE_GAITS:
@@ -344,14 +338,21 @@ class AnalyseBiomech:
             
         return fx, fy, fz
     
-    def get_critical_load(self) -> float:
-        """Возвращает критическую нагрузку для выбранного материала"""
-        return self.critical_load
+    def get_tensile_strength(self) -> float:
+        """Возвращает предел прочности"""
+        return self.tensile_strength
+    
+    def get_risk_percentage(self, max_load: float) -> float:
+        """Вычисляем риск повреждения протеза"""
+        R = self.kultya_girth / (2*np.pi)
+        S = np.pi * R**2
+        sigma = max_load/S
+        risk_percentage = min((sigma / self.tensile_strength) * 100.0, 100.0)
+        return risk_percentage
 
     def generate_recommendations(self, risk: float) -> list[str]:
         """Формирует список советов на основе риска повреждения"""
         recs = []
-        material = self.request.socket.material
         movement_type = self.request.movement_type
     
         # Анализ статического риска
@@ -361,13 +362,6 @@ class AnalyseBiomech:
             recs.append("🔴 ПРЕВЫШЕН ПРЕДЕЛ ПРОЧНОСТИ! Немедленно замените гильзу!")
         else:
             recs.append("🟢 Нагрузка в норме. Текущий режим активности безопасен для изделия.")
-
-        # Советы по материалу
-        if material == "thermoplastic" and risk > 70:
-            recs.append("💡 СОВЕТ: Пластиковая гильза не справляется с вашей нагрузкой. Рекомендуется переход на карбон.")
-        
-        if material == "carbon_fiber" and risk < 30:
-            recs.append("ℹ️ Запас прочности избыточен. Для снижения веса можно использовать более легкие материалы.")
 
         # Советы по типу движения
         if movement_type == "jump" and risk > 60:

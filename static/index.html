@@ -121,25 +121,20 @@
             <div class="settings-content">
                 <div id="bioInputs">
                     <div class="input-group">
-                        <label>Материал гильзы</label>
-                        <select id="materialType" class="styled-select">
-                            <option value="carbon_fiber_high">Карбон (высокопрочный) - 5000 Н</option>
-                            <option value="carbon_fiber">Карбон (стандарт) - 3000 Н</option>
-                            <option value="carbon_fiber_light">Карбон (облегченный) - 2000 Н</option>
-                            <option value="petg_reinforced">PETG армированный - 1800 Н</option>
-                            <option value="petg_standard">PETG стандартный - 1200 Н</option>
-                            <option value="petg_light">PETG облегченный - 800 Н</option>
-                            <option value="polypropylene">Полипропилен - 600 Н</option>
-                            <option value="thermoplastic">Термопластик (дешевый) - 400 Н</option>
-                        </select>
-                    </div>
-                    <div class="input-group">
                         <label>Вес пациента (кг)</label>
                         <input type="number" id="weight" value="80" class="styled-input">
                     </div>
                     <div class="input-group">
                         <label>Рост пациента (см)</label>
                         <input type="number" id="height" value="175" class="styled-input">
+                    </div>
+                    <div class="input-group">
+                        <label>Обхват культи (см)</label>
+                        <input type="number" id="kultya_girth" value="30" class="styled-input">
+                    </div>
+                    <div class="input-group">
+                        <label>Предел прочности материала (МПа)</label>
+                        <input type="number" id="tensile_strength" value="40" class="styled-input">
                     </div>
                     <div id="stepsGroup" class="input-group">
                         <label>Шагов в день</label>

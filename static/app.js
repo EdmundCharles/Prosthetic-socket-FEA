@@ -38,21 +38,15 @@ window.runBioAnalysis = async () => {
     toggleBioVisualization(true);
 
     try {
-        // Получаем выбранный материал
-        const materialSelect = document.getElementById('materialType');
-        const selectedMaterial = materialSelect ? materialSelect.value : 'carbon_fiber';
-
         // Собираем все новые данные
         const payload = {
             weight: parseFloat(document.getElementById('weight').value),
             height: parseFloat(document.getElementById('height').value),
+            kultya_girth: parseFloat(document.getElementById('kultya_girth').value),
             steps_per_day: parseInt(document.getElementById('stepsDay').value),
             movement_type: document.getElementById('moveType').value,
             jump_height: parseFloat(document.getElementById('jumpHeight').value) || null,
-            socket: {
-                material: selectedMaterial  // Передаем выбранный материал
-                // critical_load не передаем, он берется на сервере из библиотеки
-            }
+            tensile_strength: parseFloat(document.getElementById('tensile_strength').value)
         };
 
         const moveType = document.getElementById('moveType').value;
