@@ -68,46 +68,54 @@ ALTERNATIVE_GAITS = {
     "elderly": { "z1_amplitude": 1.02, "z1_phase": 0.16, "z3_amplitude": 1.05, "z3_phase": 0.49, "z2_base": 0.82, "heel_strike_amplitude": 0.05, "fy_braking_amplitude": -0.12, "fy_propulsion_amplitude": 0.14, "fx_first_amplitude": 0.03, "fx_second_amplitude": -0.03 }
 }
 
-# ОБНОВЛЕНИЕ: Добавлены усталостные свойства для fatigue.py
+# ОБНОВЛЕННАЯ БАЗА МАТЕРИАЛОВ ДЛЯ DUAL DAMAGE MODEL
 MATERIALS_LIBRARY = {
     "carbon_fiber_high": {
-        "name": "Карбон (высокопрочный)", 
-        "type": "carbon", "uts": 800.0, "fatigue_intercept": 1200.0, "fatigue_slope": -0.08,
-        "description": "Для активных пациентов, спортсменов, высокие нагрузки"
+        "name": "Карбон (высокопрочный)", "type": "carbon",
+        "ip": {"uts": 800.0, "fatigue_intercept": 1200.0, "fatigue_slope": -0.08},
+        "z": {"uts": 650.0, "fatigue_intercept": 900.0, "fatigue_slope": -0.10},
+        "description": "Для активных пациентов, высокие нагрузки"
     },
     "carbon_fiber": {
-        "name": "Карбон (стандарт)",
-        "type": "carbon", "uts": 600.0, "fatigue_intercept": 850.0, "fatigue_slope": -0.1,
+        "name": "Карбон (стандарт)", "type": "carbon",
+        "ip": {"uts": 600.0, "fatigue_intercept": 850.0, "fatigue_slope": -0.1},
+        "z": {"uts": 450.0, "fatigue_intercept": 600.0, "fatigue_slope": -0.12},
         "description": "Для обычной повседневной активности"
     },
     "carbon_fiber_light": {
-        "name": "Карбон (облегченный)",
-        "type": "carbon", "uts": 450.0, "fatigue_intercept": 600.0, "fatigue_slope": -0.11,
+        "name": "Карбон (облегченный)", "type": "carbon",
+        "ip": {"uts": 450.0, "fatigue_intercept": 600.0, "fatigue_slope": -0.11},
+        "z": {"uts": 300.0, "fatigue_intercept": 400.0, "fatigue_slope": -0.13},
         "description": "Для легких пациентов, малая нагрузка"
     },
     "petg_reinforced": {
-        "name": "PETG армированный",
-        "type": "petg", "uts": 65.0, "fatigue_intercept": 90.0, "fatigue_slope": -0.09,
+        "name": "PETG армированный", "type": "petg",
+        "ip": {"uts": 65.0, "fatigue_intercept": 90.0, "fatigue_slope": -0.09},
+        "z": {"uts": 45.0, "fatigue_intercept": 60.0, "fatigue_slope": -0.12},
         "description": "Усиленный пластик для FGF печати"
     },
     "petg_standard": {
-        "name": "PETG стандартный",
-        "type": "petg", "uts": 50.0, "fatigue_intercept": 70.0, "fatigue_slope": -0.1,
+        "name": "PETG стандартный", "type": "petg",
+        "ip": {"uts": 50.0, "fatigue_intercept": 70.0, "fatigue_slope": -0.1},
+        "z": {"uts": 30.0, "fatigue_intercept": 45.0, "fatigue_slope": -0.15},
         "description": "Базовый пластик для FGF печати"
     },
     "petg_light": {
-        "name": "PETG облегченный", 
-        "type": "petg", "uts": 40.0, "fatigue_intercept": 55.0, "fatigue_slope": -0.11,
+        "name": "PETG облегченный", "type": "petg",
+        "ip": {"uts": 40.0, "fatigue_intercept": 55.0, "fatigue_slope": -0.11},
+        "z": {"uts": 25.0, "fatigue_intercept": 35.0, "fatigue_slope": -0.16},
         "description": "Легкий пластик, малая нагрузка"
     },
     "polypropylene": {
-        "name": "Полипропилен",
-        "type": "petg", "uts": 30.0, "fatigue_intercept": 45.0, "fatigue_slope": -0.12,
+        "name": "Полипропилен", "type": "petg",
+        "ip": {"uts": 30.0, "fatigue_intercept": 45.0, "fatigue_slope": -0.12},
+        "z": {"uts": 20.0, "fatigue_intercept": 28.0, "fatigue_slope": -0.16},
         "description": "Дешевый материал, для пробных протезов"
     },
     "thermoplastic": {
-        "name": "Термопластик", 
-        "type": "petg", "uts": 25.0, "fatigue_intercept": 35.0, "fatigue_slope": -0.12,
+        "name": "Термопластик", "type": "petg",
+        "ip": {"uts": 25.0, "fatigue_intercept": 35.0, "fatigue_slope": -0.12},
+        "z": {"uts": 15.0, "fatigue_intercept": 20.0, "fatigue_slope": -0.18},
         "description": "Бюджетный вариант, только для малых нагрузок"
     }
 }
@@ -139,14 +147,14 @@ class AnalyseBiomech:
         self.g = 9.81
         self.gait_profile = gait_profile
         
-        # Получаем параметры материала из библиотеки
+        # Забираем параметры слабого звена (ось Z) для консервативной статической оценки
         material_key = request.socket.material
         if material_key in MATERIALS_LIBRARY:
             mat_info = MATERIALS_LIBRARY[material_key]
-            self.uts = mat_info["uts"]  # Предел прочности в МПа
+            self.uts = mat_info["z"]["uts"]
             self.material_type = mat_info["type"]
         else:
-            self.uts = 600.0  # Значение по умолчанию для карбона
+            self.uts = 450.0 
             self.material_type = "carbon"
         
         if gait_profile in ALTERNATIVE_GAITS:
@@ -157,8 +165,8 @@ class AnalyseBiomech:
         else:
             self.params = GAIT_PARAMS
 
-        self.kultya_girth_m = request.kultya_girth / 100.0 #М
-        self.uts_pa = self.uts * 10**6 #Pa
+        self.kultya_girth_m = request.kultya_girth / 100.0
+        self.uts_pa = self.uts * 10**6 
 
     def get_duration(self) -> float:
         if self.request.movement_type == "jump":
