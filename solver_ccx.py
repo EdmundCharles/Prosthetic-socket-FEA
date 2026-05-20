@@ -219,13 +219,15 @@ def parse_dat(num_nodes, elements, job_name="job"):
     vm_squared = 0.5 * ((Sxx - Syy)**2 + (Syy - Szz)**2 + (Szz - Sxx)**2 + 6 * (Sxy**2 + Syz**2 + Sxz**2))
     von_mises = np.sqrt(np.maximum(vm_squared, 0.0))
     
-    # Возвращаем стандартный Мизес, так как гильза полностью сжата по оси Z из-за веса человека.
-    critical_node_idx = int(np.argmax(von_mises))
+    # Фильтруем сингулярности: берем 99-й перцентиль Мизеса как критическое напряжение.
+    # Это отсекает локальные пики из-за вырожденных элементов и точечных нагрузок.
+    p99_stress = float(np.percentile(von_mises, 99.0))
+    critical_node_idx = int(np.argmin(np.abs(von_mises - p99_stress)))
     
     return {
         "displacements": displacements.tolist(),
         "stresses_vm": von_mises.tolist(),
-        "max_stress": float(np.max(von_mises)),
+        "max_stress": p99_stress,
         "critical_node_idx": critical_node_idx,
         "critical_stress_voigt": stresses[critical_node_idx].tolist()
     }

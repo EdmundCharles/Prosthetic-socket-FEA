@@ -212,6 +212,7 @@ document.getElementById('stlInput').addEventListener('change', (e) => {
     document.getElementById('resSummary')?.classList.add('hidden');
     document.getElementById('techReport')?.classList.add('hidden');
     document.getElementById('legendOverlay')?.classList.add('hidden');
+    document.getElementById('visualTools')?.classList.remove('hidden');
     document.getElementById('topStatus').textContent = "Чтение файла...";
     
     const reader = new FileReader();

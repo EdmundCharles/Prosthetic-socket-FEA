@@ -21,6 +21,28 @@ env/
 Icon
 ._*
 Thumbs.db
+temp_*
+*.stl
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+.env/
+.env.local
+*.log
+.pytest_cache/
+.mypy_cache/
+.vscode/
+.idea/
+*.iml
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
@@ -29,6 +51,9 @@ dist/
 build/
 socket_analysis.*
 *.dat
-*.frd* *.out *.inp temp_ *.stl
-socket_analysis.*  
- 
+*.frd
+*.out
+*.inp
+temp_*.stl
+scratch/
+spooles.out
