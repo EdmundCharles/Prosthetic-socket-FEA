@@ -259,17 +259,57 @@ def process_socket_analysis(stl_path, load_newtons, condition="II", mesh_size=5.
     generate_inp(nodes, elements, bottom_nodes, top_nodes, force_vector, master_coords, material, job_name)
     run_ccx(job_name) 
     parsed_data = parse_dat(len(nodes), elements, job_name)
+    # =====================================================================
+    # НОВЫЙ БЛОК: ИНТЕГРАЦИЯ УСТАЛОСТНОГО РАСЧЕТА
+    # =====================================================================
+    
+    # 1. Задаем параметры материала (в идеале их нужно вынести в конфиг или базу данных)
+    mat_ip = {"uts": 50.0, "fatigue_intercept": 60.0, "fatigue_slope": -0.1}
+    mat_z  = {"uts": 30.0, "fatigue_intercept": 35.0, "fatigue_slope": -0.15}
+    
+    # 2. Формируем историю нагружения для одного шага (0 -> Максимум -> 0)
+    crit_stress = parsed_data["critical_stress_voigt"]
+    zero_stress = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    
+    step_history = np.array([
+        zero_stress,   # Поднял ногу (нет нагрузки)
+        crit_stress,   # Наступил (максимальная расчетная нагрузка из МКЭ)
+        zero_stress    # Снова поднял ногу
+    ])
+    
+    # 3. Считаем урон от ОДНОГО шага
+    fatigue_results = analyze_fdm_node_fatigue(step_history, mat_ip, mat_z)
+    
+    # 4. Прогнозируем ресурс (переводим урон за цикл в общее количество шагов)
+    damage_per_step = fatigue_results["total_damage"]
+    
+    if damage_per_step > 0 and damage_per_step < 1.0:
+        estimated_steps = int(1.0 / damage_per_step)
+    elif damage_per_step >= 1.0:
+        estimated_steps = 0  # Разрушится на первом же шаге (статика не выдержала)
+    else:
+        estimated_steps = float('inf') # Бесконечный ресурс (нагрузка ниже предела выносливости)
+        
+    fatigue_results["estimated_steps"] = estimated_steps
+
+    # =====================================================================
+    
     return {
         "nodes": nodes.tolist(), 
         "displacements": parsed_data["displacements"], 
-        "fem_values": parsed_data["stresses_vm"], # Отдаем фронтенду напряжения для раскраски
+        "fem_values": parsed_data["stresses_vm"],
         "max_stress": parsed_data["max_stress"],
         "critical_node_idx": parsed_data["critical_node_idx"],
         "critical_stress_voigt": parsed_data["critical_stress_voigt"],
+        "fatigue_analysis": fatigue_results, # Отдаем данные усталости на фронтенд
         "bottom_nodes": nodes[bottom_nodes].tolist(), 
         "top_nodes": nodes[top_nodes].tolist(),
         "master_coords": master_coords, 
         "force_vector": force_vector,
         "surface_faces": surface_faces,
-        "stats": {"nodes_count": len(nodes), "elements_count": len(elements), "solve_time": round(time.time() - start_time, 2)}
+        "stats": {
+            "nodes_count": len(nodes), 
+            "elements_count": len(elements), 
+            "solve_time": round(time.time() - start_time, 2)
+        }
     }
