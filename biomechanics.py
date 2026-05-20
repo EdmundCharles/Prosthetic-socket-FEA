@@ -42,17 +42,21 @@ GAIT_PARAMS = {
         "fy_braking_width": 0.03,        # Ширина пика торможения
         
         "fy_propulsion_amplitude": 0.20, # Пик ускорения (% веса) - положительный
-        "fy_propulsion_phase": 0.48,     # Фаза пика ускорения (48% цикла)
+        "fy_propulsion_phase": 0.52,     # Фаза пика ускорения (52% цикла)
         "fy_propulsion_width": 0.04,     # Ширина пика ускорения
         
         # ===== ПАРАМЕТРЫ Fx (боковая сила) =====
-        "fx_first_amplitude": 0.05,      # Первый пик (положительный, на наблюдателя)
-        "fx_first_phase": 0.12,          # Фаза первого пика (12% цикла)
+        "fx_first_amplitude": -0.04,      # Первый пик 
+        "fx_first_phase": 0.16,          # Фаза первого пика (16% цикла)
         "fx_first_width": 0.04,          # Ширина первого пика
         
-        "fx_second_amplitude": -0.05,    # Второй пик (отрицательный, от наблюдателя)
-        "fx_second_phase": 0.45,         # Фаза второго пика (45% цикла)
+        "fx_second_amplitude": -0.03,    # Второй пик 
+        "fx_second_phase": 0.42,         # Фаза второго пика (42% цикла)
         "fx_second_width": 0.04,         # Ширина второго пика
+
+        "fx_min_amplitude": -0.03,        # Минимум между пиками
+        "fx_min_phase": 0.30,             # Фаза минимума (30% цикла)
+        "fx_min_width": 0.08,             # Ширина минимума
     },
     
     "jump": {
@@ -333,8 +337,13 @@ class AnalyseBiomech:
             second_peak = p["fx_second_amplitude"] * weight * self._gaussian_peak(
                 t, 1.0, p["fx_second_phase"], p["fx_second_width"], 2
             )
-            
-            fx = first_peak + second_peak
+
+            min_peak = p["fx_min_amplitude"] * weight * self._gaussian_peak(
+                t, 1.0, p["fx_min_phase"], p["fx_min_width"], 4  # power=4 для более плоского дна
+            )
+
+            fx = first_peak + second_peak + min_peak
+    
             
         return fx, fy, fz
     
