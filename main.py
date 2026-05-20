@@ -5,8 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import shutil, os
 import numpy as np
 
-from solver_ccx1_pro import process_socket_analysis
-from biomeh1_pro import RequestBiomech, AnalyseBiomech, ResponseBiomech, SocketModel, MATERIALS_LIBRARY
+from solver_ccx import process_socket_analysis
+from biomechanics import RequestBiomech, AnalyseBiomech, ResponseBiomech, SocketModel, MATERIALS_LIBRARY
 from fatigue import analyze_node_fatigue 
 
 app = FastAPI(title="Unified Prosthetic Suite")
