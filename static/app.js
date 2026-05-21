@@ -304,16 +304,21 @@ document.getElementById('calcBtn').addEventListener('click', async () => {
         document.getElementById('resSummary').classList.remove('hidden');
         document.getElementById('techReport').classList.remove('hidden');
 
-        // ОБНОВЛЕНИЕ: ВЫВОД РЕЗУЛЬТАТОВ (МПА и ЛЕТ)
+        // ОБНОВЛЕНИЕ: ВЫВОД РЕЗУЛЬТАТОВ (МПА, ЛЕТ и ПРИЧИНЫ)
         const lifeYears = data.fatigue_results.estimated_life_years;
-        const lifeText = lifeYears >= 20 ? '> 20 лет' : lifeYears + ' лет';
+        const lifeText = lifeYears >= 50 ? '> 50 лет (Бесконечный)' : (lifeYears === 0 ? 'Разрушение (Статика)' : lifeYears + ' лет');
         const lifeColor = lifeYears < 1.5 ? '#dc2626' : (lifeYears < 5 ? '#f59e0b' : 'var(--green-primary)');
+        const criticalMode = data.fatigue_results.critical_mode || "Не определен";
 
         document.getElementById('resText').innerHTML = `
             <div style="font-size: 13px; margin-bottom: 4px; color: var(--text-muted);">Критическое напряжение (Мизес):</div>
             <div style="color: #dc2626; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 12px;">${data.max_stress.toFixed(2)} МПа</div>
+            
             <div style="font-size: 13px; margin-bottom: 4px; color: var(--text-muted);">Прогнозный срок службы:</div>
-            <div style="color: ${lifeColor}; font-size: 18px; font-weight: 700;">${lifeText}</div>
+            <div style="color: ${lifeColor}; font-size: 18px; font-weight: 700; margin-bottom: 12px;">${lifeText}</div>
+            
+            <div style="font-size: 13px; margin-bottom: 4px; color: var(--text-muted);">Главная угроза:</div>
+            <div style="color: var(--text-main); font-size: 14px; font-weight: 600;">${criticalMode}</div>
         `;
 
         // Обновляем легенду
